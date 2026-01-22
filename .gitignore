@@ -1,0 +1,19 @@
+# Build artifacts
+target/
+project/target/
+project/project/target/
+
+# IDE
+.idea/
+.bsp/
+.metals/
+.vscode/
+
+# OS
+.DS_Store
+
+# Databases (generated)
+*.db
+
+# Logs
+*.log
