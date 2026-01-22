@@ -94,8 +94,8 @@ object WorkflowService:
   given JsonValueCodec[SignalRequest] = JsonCodecMaker.make
   given JsonValueCodec[HealthResponse] = JsonCodecMaker.make
   given JsonValueCodec[ErrorResponse] = JsonCodecMaker.make
-  given JsonValueCodec[Seq[WorkflowInfoResponse]] = JsonCodecMaker.make
-  given JsonValueCodec[Seq[EventResponse]] = JsonCodecMaker.make
+  given workflowListCodec: JsonValueCodec[Seq[WorkflowInfoResponse]] = JsonCodecMaker.make
+  given eventListCodec: JsonValueCodec[Seq[EventResponse]] = JsonCodecMaker.make
 
   // ============================================================================
   // Routes
