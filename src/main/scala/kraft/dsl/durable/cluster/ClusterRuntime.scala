@@ -178,6 +178,11 @@ class ClusterRuntime private (
   def aliveMembers: Seq[NodeInfo] = membership.alive
 
   /**
+   * Get this node's ID.
+   */
+  def nodeId: NodeId = config.nodeId
+
+  /**
    * Get gossip statistics.
    */
   def stats: ClusterStats =

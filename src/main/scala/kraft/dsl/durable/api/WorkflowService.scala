@@ -115,7 +115,7 @@ object WorkflowService:
           Ok(writeToArray(response), "application/json")
         catch
           case e: Exception =>
-            BadRequest(writeToArray(ErrorResponse(e.getMessage, "INVALID_REQUEST")), "application/json")
+            BadRequest(writeToArray(ErrorResponse(e.getMessage, "INVALID_REQUEST")))
       },
 
       // Get workflow info
@@ -135,7 +135,7 @@ object WorkflowService:
             )
             Ok(writeToArray(response), "application/json")
           case None =>
-            BadRequest(writeToArray(ErrorResponse("Missing workflow ID", "MISSING_ID")), "application/json")
+            BadRequest(writeToArray(ErrorResponse("Missing workflow ID", "MISSING_ID")))
       },
 
       // Get workflow result (long-polling)
@@ -151,7 +151,7 @@ object WorkflowService:
             )
             Ok(writeToArray(response), "application/json")
           case None =>
-            BadRequest(writeToArray(ErrorResponse("Missing workflow ID", "MISSING_ID")), "application/json")
+            BadRequest(writeToArray(ErrorResponse("Missing workflow ID", "MISSING_ID")))
       },
 
       // Get workflow events
@@ -162,7 +162,7 @@ object WorkflowService:
             val events = Seq.empty[EventResponse]
             Ok(writeToArray(events), "application/json")
           case None =>
-            BadRequest(writeToArray(ErrorResponse("Missing workflow ID", "MISSING_ID")), "application/json")
+            BadRequest(writeToArray(ErrorResponse("Missing workflow ID", "MISSING_ID")))
       },
 
       // Signal workflow
@@ -172,7 +172,7 @@ object WorkflowService:
             // TODO: Send signal to workflow
             NoContent
           case _ =>
-            BadRequest(writeToArray(ErrorResponse("Missing parameters", "MISSING_PARAMS")), "application/json")
+            BadRequest(writeToArray(ErrorResponse("Missing parameters", "MISSING_PARAMS")))
       },
 
       // Cancel workflow
@@ -182,7 +182,7 @@ object WorkflowService:
             // TODO: Cancel workflow
             NoContent
           case None =>
-            BadRequest(writeToArray(ErrorResponse("Missing workflow ID", "MISSING_ID")), "application/json")
+            BadRequest(writeToArray(ErrorResponse("Missing workflow ID", "MISSING_ID")))
       },
 
       // List workflows
