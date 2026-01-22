@@ -9,6 +9,20 @@ import java.nio.file.{Files, Paths, StandardOpenOption, FileVisitOption}
 import scala.jdk.CollectionConverters.*
 import scala.jdk.StreamConverters.*
 
+// Netty imports for WebSocket support
+import io.netty.bootstrap.ServerBootstrap
+import io.netty.buffer.Unpooled
+import io.netty.channel.*
+import io.netty.channel.nio.NioEventLoopGroup
+import io.netty.channel.socket.SocketChannel
+import io.netty.channel.socket.nio.NioServerSocketChannel
+import io.netty.handler.codec.http.*
+import io.netty.handler.codec.http.websocketx.*
+import io.netty.util.CharsetUtil
+import java.io.{BufferedReader, InputStreamReader}
+import java.util.concurrent.{ConcurrentHashMap, Executors}
+import scala.concurrent.{ExecutionContext, Future}
+
 /**
  * Smart Filesystem Node - Enhanced node for distributed file storage.
  *
@@ -291,14 +305,58 @@ object SmartFSNode:
             Ok(writeToArray(response), "application/json")
       },
 
+      // Raw file endpoint - returns binary content directly with correct MIME type
+      // Use this for efficient file downloads without JSON/base64 overhead
+      POST("/fs/raw") { req =>
+        try
+          val request = readFromArray[ReadRequest](req.body)
+          val path = Paths.get(request.path)
+          val bytes = Files.readAllBytes(path)
+
+          // Detect MIME type based on extension
+          val filename = path.getFileName.toString.toLowerCase
+          val mimeType = filename match
+            case f if f.endsWith(".png") => "image/png"
+            case f if f.endsWith(".jpg") || f.endsWith(".jpeg") => "image/jpeg"
+            case f if f.endsWith(".gif") => "image/gif"
+            case f if f.endsWith(".webp") => "image/webp"
+            case f if f.endsWith(".svg") => "image/svg+xml"
+            case f if f.endsWith(".pdf") => "application/pdf"
+            case f if f.endsWith(".mp4") => "video/mp4"
+            case f if f.endsWith(".webm") => "video/webm"
+            case f if f.endsWith(".mp3") => "audio/mpeg"
+            case f if f.endsWith(".txt") => "text/plain"
+            case f if f.endsWith(".html") => "text/html"
+            case f if f.endsWith(".css") => "text/css"
+            case f if f.endsWith(".js") => "application/javascript"
+            case f if f.endsWith(".json") => "application/json"
+            case _ => "application/octet-stream"
+
+          Ok(bytes, mimeType)
+        catch
+          case e: Exception =>
+            val response = ReadResponse(nodeId, hostname, "", "", 0, "", Some(e.getMessage))
+            Ok(writeToArray(response), "application/json")
+      },
+
       // Read file (with checksum)
+      // Returns base64-encoded content for binary files, plain text for text files
       POST("/fs/read") { req =>
         try
           val request = readFromArray[ReadRequest](req.body)
           val path = Paths.get(request.path)
           val bytes = Files.readAllBytes(path)
-          val content = new String(bytes, "UTF-8")
           val checksum = computeChecksum(bytes)
+
+          // Detect if file is text or binary based on extension
+          val filename = path.getFileName.toString.toLowerCase
+          val textExtensions = Set(".txt", ".md", ".json", ".xml", ".html", ".css", ".js", ".ts", ".scala", ".java", ".py", ".sh", ".yml", ".yaml", ".toml", ".ini", ".conf", ".log", ".csv")
+          val isText = textExtensions.exists(ext => filename.endsWith(ext))
+
+          val content = if isText then
+            new String(bytes, "UTF-8")
+          else
+            java.util.Base64.getEncoder.encodeToString(bytes)
 
           val response = ReadResponse(nodeId, hostname, request.path, content, bytes.length, checksum)
           Ok(writeToArray(response), "application/json")
@@ -360,6 +418,108 @@ object SmartFSNode:
     )
 
   // ============================================================================
+  // WebSocket Server for Streaming Exec
+  // ============================================================================
+
+  class ExecStreamWebSocketServer(nodeId: String, hostname: String, port: Int):
+    private val bossGroup = new NioEventLoopGroup(1)
+    private val workerGroup = new NioEventLoopGroup()
+    private val executor = Executors.newCachedThreadPool()
+    private given ExecutionContext = ExecutionContext.fromExecutor(executor)
+    private var channel: Channel = scala.compiletime.uninitialized
+
+    def start(): Unit =
+      val bootstrap = new ServerBootstrap()
+        .group(bossGroup, workerGroup)
+        .channel(classOf[NioServerSocketChannel])
+        .childHandler(new ChannelInitializer[SocketChannel]:
+          override def initChannel(ch: SocketChannel): Unit =
+            ch.pipeline()
+              .addLast(new HttpServerCodec())
+              .addLast(new HttpObjectAggregator(65536))
+              .addLast(new WebSocketServerProtocolHandler("/ws/exec", null, true))
+              .addLast(new ExecStreamHandler(nodeId, hostname))
+        )
+
+      channel = bootstrap.bind(port).sync().channel()
+      println(s"[WebSocket] Streaming exec server on ws://localhost:$port/ws/exec")
+
+    def stop(): Unit =
+      if channel != null then channel.close()
+      workerGroup.shutdownGracefully()
+      bossGroup.shutdownGracefully()
+      executor.shutdown()
+
+  class ExecStreamHandler(nodeId: String, hostname: String) extends SimpleChannelInboundHandler[WebSocketFrame]:
+    private var process: Process = scala.compiletime.uninitialized
+    private var running = false
+
+    override def channelRead0(ctx: ChannelHandlerContext, frame: WebSocketFrame): Unit =
+      frame match
+        case textFrame: TextWebSocketFrame =>
+          val command = textFrame.text()
+          executeStreaming(ctx, command)
+        case _: CloseWebSocketFrame =>
+          stopProcess()
+          ctx.close()
+        case _ => // Ignore other frame types
+
+    private def executeStreaming(ctx: ChannelHandlerContext, command: String): Unit =
+      // Send start message
+      sendJson(ctx, s"""{"type":"start","nodeId":"$nodeId","hostname":"$hostname","command":"$command"}""")
+
+      try
+        val pb = new ProcessBuilder("/bin/sh", "-c", command)
+        pb.redirectErrorStream(true)
+        process = pb.start()
+        running = true
+
+        // Read output in a separate thread
+        val reader = new BufferedReader(new InputStreamReader(process.getInputStream))
+        val readerThread = new Thread(() => {
+          try
+            var line = reader.readLine()
+            while line != null && running && ctx.channel().isActive do
+              val escaped = line.replace("\\", "\\\\").replace("\"", "\\\"")
+              sendJson(ctx, s"""{"type":"output","line":"$escaped"}""")
+              line = reader.readLine()
+          catch
+            case _: Exception => // Process ended or channel closed
+          finally
+            reader.close()
+
+            if ctx.channel().isActive then
+              val exitCode = if process != null then
+                try process.waitFor() catch case _: Exception => -1
+              else -1
+              sendJson(ctx, s"""{"type":"exit","exitCode":$exitCode}""")
+        })
+        readerThread.setDaemon(true)
+        readerThread.start()
+
+      catch
+        case e: Exception =>
+          sendJson(ctx, s"""{"type":"error","message":"${e.getMessage.replace("\"", "'")}"}""")
+
+    private def sendJson(ctx: ChannelHandlerContext, json: String): Unit =
+      if ctx.channel().isActive then
+        ctx.writeAndFlush(new TextWebSocketFrame(json))
+
+    private def stopProcess(): Unit =
+      running = false
+      if process != null then
+        process.destroyForcibly()
+        process = null
+
+    override def channelInactive(ctx: ChannelHandlerContext): Unit =
+      stopProcess()
+      super.channelInactive(ctx)
+
+    override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit =
+      stopProcess()
+      ctx.close()
+
+  // ============================================================================
   // Main
   // ============================================================================
 
@@ -375,7 +535,9 @@ object SmartFSNode:
 
     val mode = args(0)
     val port = args(1).toInt
-    val storagePath = if args.length > 2 then args(2) else "/data"
+    // Default to user's home directory instead of hardcoded /data
+    val defaultPath = sys.env.getOrElse("HOME", sys.props.getOrElse("user.home", "/"))
+    val storagePath = if args.length > 2 then args(2) else defaultPath
 
     mode match
       case "seed" => runNode(port, storagePath)
@@ -386,6 +548,7 @@ object SmartFSNode:
   def runNode(port: Int, storagePath: String): Unit =
     val nodeId = s"smart-fs-$port"
     val hostname = java.net.InetAddress.getLocalHost.getHostName
+    val wsPort = port + 10  // WebSocket on port + 10 (e.g., 7810 for HTTP, 7820 for WS)
 
     println("=" * 60)
     println(s"Smart Filesystem Node")
@@ -393,7 +556,8 @@ object SmartFSNode:
     println()
     println(s"  Node ID:      $nodeId")
     println(s"  Hostname:     $hostname")
-    println(s"  Port:         $port")
+    println(s"  HTTP Port:    $port")
+    println(s"  WS Port:      $wsPort")
     println(s"  Storage Path: $storagePath")
     println()
 
@@ -403,7 +567,10 @@ object SmartFSNode:
     val server = HttpServer(allRoutes)
     val handle = server.start(port)
 
-    println(s"  Server listening on port $port")
+    // Start WebSocket server for streaming exec
+    val wsServer = new ExecStreamWebSocketServer(nodeId, hostname, wsPort)
+    wsServer.start()
+
     println()
     println("Endpoints:")
     println(s"  GET  http://localhost:$port/health       - Node health")
@@ -415,12 +582,15 @@ object SmartFSNode:
     println(s"  POST http://localhost:$port/fs/delete    - Delete file")
     println(s"  POST http://localhost:$port/fs/search    - Search files")
     println(s"  POST http://localhost:$port/fs/exists    - Check file exists")
+    println(s"  POST http://localhost:$port/fs/exec      - Execute command")
+    println(s"  WS   ws://localhost:$wsPort/ws/exec      - Streaming exec")
     println()
     println("Press Ctrl+C to stop")
 
     // Shutdown hook
     Runtime.getRuntime.addShutdownHook(new Thread(() => {
       println("\nShutting down...")
+      wsServer.stop()
       handle.close()
     }))
 

@@ -17,6 +17,11 @@ export interface NodeInfo {
   usableSpace: number;
 }
 
+export interface NodeEndpoints {
+  http: string;
+  ws: string;  // WebSocket endpoint for streaming exec
+}
+
 export interface DiskInfo {
   nodeId: string;
   hostname: string;
@@ -82,6 +87,19 @@ export interface DeleteResponse {
   error?: string;
 }
 
+export interface ExecRequest {
+  command: string;
+}
+
+export interface ExecResponse {
+  nodeId: string;
+  hostname: string;
+  command: string;
+  output: string;
+  exitCode: number;
+  error?: string;
+}
+
 export interface LsResponse {
   nodeId: string;
   hostname: string;
@@ -109,7 +127,7 @@ export interface SmartDFSConfig {
 }
 
 export class SmartDFS {
-  private nodes: { endpoint: string; info: NodeInfo }[] = [];
+  private nodes: { endpoint: string; wsEndpoint: string; info: NodeInfo }[] = [];
   private fileIndex: Map<string, StoredFile> = new Map();
 
   constructor(
@@ -130,13 +148,17 @@ export class SmartDFS {
   /**
    * Discover all available nodes and their disk info
    */
-  async discoverNodes(): Promise<{ endpoint: string; info: NodeInfo }[]> {
+  async discoverNodes(): Promise<{ endpoint: string; wsEndpoint: string; info: NodeInfo }[]> {
     this.nodes = [];
     for (const endpoint of this.endpoints) {
       try {
         const info = await this.request<NodeInfo>(endpoint, '/fs/info');
         if (info && info.nodeId) {
-          this.nodes.push({ endpoint, info });
+          // Compute WebSocket endpoint (HTTP port + 10)
+          const url = new URL(endpoint.startsWith('http') ? endpoint : `http://${endpoint}`);
+          const wsPort = parseInt(url.port || '80') + 10;
+          const wsEndpoint = `ws://${url.hostname}:${wsPort}/ws/exec`;
+          this.nodes.push({ endpoint, wsEndpoint, info });
         }
       } catch {
         // Node not available
@@ -413,8 +435,71 @@ export class SmartDFS {
   /**
    * Get all nodes
    */
-  getNodes(): { endpoint: string; info: NodeInfo }[] {
+  getNodes(): { endpoint: string; wsEndpoint: string; info: NodeInfo }[] {
     return this.nodes;
+  }
+
+  /**
+   * Get WebSocket endpoint for streaming exec on a node
+   */
+  getWsEndpoint(nodeId: string): string | undefined {
+    const node = this.nodes.find(n => n.info.nodeId === nodeId);
+    return node?.wsEndpoint;
+  }
+
+  /**
+   * Get the storage path (root directory) for a specific node
+   */
+  getStoragePath(nodeId: string): string {
+    const node = this.nodes.find(n => n.info.nodeId === nodeId);
+    return node?.info.storagePath || '/';
+  }
+
+  /**
+   * Get node info by ID
+   */
+  getNodeInfo(nodeId: string): NodeInfo | undefined {
+    const node = this.nodes.find(n => n.info.nodeId === nodeId);
+    return node?.info;
+  }
+
+  /**
+   * Execute a command on a specific node
+   */
+  async exec(nodeId: string, command: string): Promise<ExecResponse> {
+    const node = this.nodes.find(n => n.info.nodeId === nodeId);
+    if (!node) {
+      return {
+        nodeId,
+        hostname: 'unknown',
+        command,
+        output: '',
+        exitCode: -1,
+        error: `Node not found: ${nodeId}`
+      };
+    }
+
+    try {
+      const result = await this.request<ExecResponse>(node.endpoint, '/fs/exec', { command });
+      return result;
+    } catch (e) {
+      return {
+        nodeId,
+        hostname: node.info.hostname,
+        command,
+        output: '',
+        exitCode: -1,
+        error: (e as Error).message
+      };
+    }
+  }
+
+  /**
+   * Get endpoint for a node ID
+   */
+  getEndpointForNodeId(nodeId: string): string | undefined {
+    const node = this.nodes.find(n => n.info.nodeId === nodeId);
+    return node?.endpoint;
   }
 
   private async getStoragePath(endpoint: string): Promise<string> {
