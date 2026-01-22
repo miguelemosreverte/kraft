@@ -76,9 +76,11 @@ object ClusterNode:
     val storage = NodeStorage.make(InMemoryStore.open())
     val nodeId = s"seed-$port"
 
+    // Use 127.0.0.1 as advertised address for localhost testing
+    // In production, use actual hostname/IP
     val config = ClusterConfig(
       nodeId = NodeId(nodeId),
-      bindAddress = NodeAddress("0.0.0.0", port),
+      bindAddress = NodeAddress("127.0.0.1", port),
       seedNodes = Nil // Seed has no seeds
     )
 
@@ -122,9 +124,10 @@ object ClusterNode:
     val storage = NodeStorage.make(InMemoryStore.open())
     val nodeId = s"worker-$port"
 
+    // Use 127.0.0.1 as advertised address for localhost testing
     val config = ClusterConfig(
       nodeId = NodeId(nodeId),
-      bindAddress = NodeAddress("0.0.0.0", port),
+      bindAddress = NodeAddress("127.0.0.1", port),
       seedNodes = List(NodeAddress(seedHost, seedPort))
     )
 
