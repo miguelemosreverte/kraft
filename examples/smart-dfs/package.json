@@ -3,11 +3,16 @@
   "version": "1.0.0",
   "description": "Kraft Smart Distributed Filesystem with RAID-like replication",
   "type": "module",
+  "bin": {
+    "smart-dfs": "./cli.ts"
+  },
   "scripts": {
     "start": "npx tsx index.ts",
     "server": "npx tsx server.ts",
+    "cli": "npx tsx cli.ts",
     "start:local": "KRAFT_NODES=http://localhost:7801,http://localhost:7802,http://localhost:7803 npx tsx index.ts",
-    "server:local": "KRAFT_NODES=http://localhost:7801,http://localhost:7802,http://localhost:7803 npx tsx server.ts"
+    "server:local": "KRAFT_NODES=http://localhost:7801,http://localhost:7802,http://localhost:7803 npx tsx server.ts",
+    "cli:local": "KRAFT_NODES=http://localhost:7801,http://localhost:7802,http://localhost:7803 npx tsx cli.ts"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
