@@ -1,0 +1,78 @@
+# Smart DFS - Distributed Filesystem with RAID-like Replication
+#
+# This demonstrates:
+# - Space-aware file placement (prefers nodes with more free space)
+# - RAID-like replication across multiple nodes
+# - Search across all nodes
+# - Web UI for file management
+#
+# Usage:
+#   docker-compose up -d
+#   npm run server:local
+#   # Open http://localhost:3000
+
+services:
+  # Storage Node 1 - "Large disk"
+  node1:
+    build:
+      context: ../..
+      dockerfile: examples/smart-dfs/Dockerfile
+    container_name: smart-dfs-node1
+    hostname: storage-alpha
+    environment:
+      - NODE_PORT=7800
+      - STORAGE_PATH=/data
+    ports:
+      - "7801:7800"
+    volumes:
+      - node1-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7800/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Storage Node 2 - "Medium disk"
+  node2:
+    build:
+      context: ../..
+      dockerfile: examples/smart-dfs/Dockerfile
+    container_name: smart-dfs-node2
+    hostname: storage-beta
+    environment:
+      - NODE_PORT=7800
+      - STORAGE_PATH=/data
+    ports:
+      - "7802:7800"
+    volumes:
+      - node2-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7800/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Storage Node 3 - "Small disk"
+  node3:
+    build:
+      context: ../..
+      dockerfile: examples/smart-dfs/Dockerfile
+    container_name: smart-dfs-node3
+    hostname: storage-gamma
+    environment:
+      - NODE_PORT=7800
+      - STORAGE_PATH=/data
+    ports:
+      - "7803:7800"
+    volumes:
+      - node3-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7800/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  node1-data:
+  node2-data:
+  node3-data:
