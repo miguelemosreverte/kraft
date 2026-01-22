@@ -364,9 +364,39 @@ export class SmartDFS {
     const results: { node: string; files: FileInfo[] }[] = [];
 
     for (const { endpoint, info } of this.nodes) {
-      const result = await this.request<LsResponse>(endpoint, '/fs/ls', { path: info.storagePath });
-      if (!result.error) {
-        results.push({ node: info.hostname, files: result.files });
+      try {
+        const result = await this.request<LsResponse>(endpoint, '/fs/ls', { path: info.storagePath });
+        if (!result.error) {
+          results.push({ node: info.hostname, files: result.files || [] });
+        } else {
+          // Storage path doesn't exist yet - treat as empty
+          results.push({ node: info.hostname, files: [] });
+        }
+      } catch {
+        // Node not available
+        results.push({ node: info.hostname, files: [] });
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * List files at a specific path across all nodes
+   */
+  async listPath(path: string): Promise<{ node: string; files: FileInfo[] }[]> {
+    const results: { node: string; files: FileInfo[] }[] = [];
+
+    for (const { endpoint, info } of this.nodes) {
+      try {
+        const result = await this.request<LsResponse>(endpoint, '/fs/ls', { path });
+        if (!result.error) {
+          results.push({ node: info.hostname, files: result.files || [] });
+        } else {
+          results.push({ node: info.hostname, files: [] });
+        }
+      } catch {
+        results.push({ node: info.hostname, files: [] });
       }
     }
 
