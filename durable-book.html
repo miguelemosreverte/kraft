@@ -1,0 +1,1046 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kraft Event Search API - Performance Journey</title>
+  <script>
+    (function() {
+      var savedTheme = localStorage.getItem('theme');
+      var savedStyle = localStorage.getItem('style');
+      var theme = savedTheme;
+      if (!theme) {
+        theme = (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+      }
+      var style = savedStyle || 'editorial';
+      document.documentElement.setAttribute('data-theme', theme);
+      document.documentElement.setAttribute('data-style', style);
+    })();
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: document.documentElement.getAttribute('data-theme') === 'light' ? 'default' : 'dark',
+      flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' }
+    });
+  </script>
+  <script src="c4-renderer.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" id="hljs-theme-dark">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css" id="hljs-theme-light">
+  <script>
+    (function() {
+      var theme = document.documentElement.getAttribute('data-theme');
+      document.getElementById('hljs-theme-dark').disabled = (theme === 'light');
+      document.getElementById('hljs-theme-light').disabled = (theme !== 'light');
+    })();
+  </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/go.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/scala.min.js"></script>
+  <style>
+    :root, [data-theme="dark"] {
+      --bg-primary: #0d1117;
+      --bg-secondary: #161b22;
+      --bg-tertiary: #21262d;
+      --text-primary: #c9d1d9;
+      --text-secondary: #8b949e;
+      --gray-50: #f9fafb;
+      --gray-100: #f3f4f6;
+      --gray-200: #e5e7eb;
+      --gray-300: #d1d5db;
+      --gray-400: #9ca3af;
+      --gray-500: #6b7280;
+      --gray-600: #4b5563;
+      --gray-700: #374151;
+      --gray-800: #1f2937;
+      --gray-900: #111827;
+      --accent-primary: #c9d1d9;
+      --accent-green: #c9d1d9;
+      --accent-blue: #58a6ff;
+      --accent-orange: #d29922;
+      --accent-red: #f85149;
+      --accent-purple: #a371f7;
+      --border-color: #30363d;
+      --code-bg: #21262d;
+      --heading-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      --body-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      --panel-radius: 8px;
+      --panel-border: 1px solid var(--border-color);
+      --panel-bg: var(--bg-secondary);
+      --panel-padding: 1.5rem;
+    }
+    [data-theme="light"] {
+      --bg-primary: #ffffff;
+      --bg-secondary: #f6f8fa;
+      --bg-tertiary: #eaeef2;
+      --text-primary: #1f2328;
+      --text-secondary: #656d76;
+      --accent-primary: #374151;
+      --accent-green: #374151;
+      --accent-blue: #0969da;
+      --accent-orange: #9a6700;
+      --accent-red: #cf222e;
+      --accent-purple: #8250df;
+      --border-color: #d0d7de;
+      --code-bg: #eaeef2;
+    }
+    [data-style="editorial"] {
+      --heading-font: 'Georgia', 'Times New Roman', serif;
+      --body-font: 'Georgia', 'Times New Roman', serif;
+      --panel-radius: 0;
+      --panel-border: none;
+      --panel-bg: transparent;
+      --panel-padding: 0;
+    }
+    [data-style="editorial"][data-theme="dark"] {
+      --bg-primary: #1a1a1a;
+      --bg-secondary: #1a1a1a;
+      --bg-tertiary: #2a2a2a;
+      --text-primary: #e8e8e8;
+      --text-secondary: #999999;
+      --border-color: #333333;
+    }
+    [data-style="editorial"][data-theme="light"] {
+      --bg-primary: #faf9f6;
+      --bg-secondary: #faf9f6;
+      --bg-tertiary: #f0efe9;
+      --text-primary: #222222;
+      --text-secondary: #666666;
+      --border-color: #dddddd;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { background: var(--bg-primary); }
+    body {
+      font-family: var(--body-font);
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      line-height: 1.6;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+    canvas { background: transparent !important; }
+    h1, h2, h3, h4 {
+      font-family: var(--heading-font);
+      color: var(--text-primary);
+      margin: 2rem 0 1rem;
+      font-weight: 600;
+    }
+    h1 { font-size: 2.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem; }
+    h2 { font-size: 1.8rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.3rem; }
+    h3 { font-size: 1.4rem; }
+    h4 { font-size: 1.1rem; color: var(--text-secondary); }
+    [data-style="editorial"] h1 { font-size: 2.8rem; font-weight: 700; letter-spacing: -0.02em; border-bottom: 2px solid var(--text-primary); }
+    [data-style="editorial"] h2 { font-size: 1.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 3rem; }
+    [data-style="editorial"] h3 { font-size: 1.3rem; font-weight: 600; font-style: italic; }
+    [data-style="editorial"] p { font-size: 1.05rem; line-height: 1.75; }
+    p { margin: 1rem 0; }
+    em { color: var(--text-secondary); font-style: italic; }
+    strong { color: var(--accent-green); font-weight: 600; }
+    a { color: var(--accent-blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code {
+      background: var(--bg-tertiary);
+      padding: 0.2rem 0.4rem;
+      border-radius: 4px;
+      font-family: 'SFMono-Regular', Consolas, monospace;
+      font-size: 0.9em;
+    }
+    pre {
+      background: var(--bg-secondary) !important;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 1rem;
+      overflow-x: auto;
+      margin: 1rem 0;
+    }
+    pre code { background: transparent !important; padding: 0; }
+    pre code.hljs, .hljs { background: transparent !important; }
+    hr { border: none; border-top: 1px solid var(--border-color); margin: 3rem 0; }
+    table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+    th, td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid var(--border-color); }
+    th { background: var(--bg-secondary); font-weight: 600; color: var(--text-secondary); }
+    tr:hover { background: var(--bg-secondary); }
+    ul, ol { margin: 1rem 0; padding-left: 2rem; }
+    li { margin: 0.5rem 0; }
+    .rps { font-weight: 600; color: var(--accent-blue); }
+    .improvement { color: var(--accent-green); }
+    .chart-container {
+      background: var(--panel-bg);
+      border: var(--panel-border);
+      border-radius: var(--panel-radius);
+      padding: var(--panel-padding);
+      margin: 2rem 0;
+    }
+    .chart-container h4 { margin: 0 0 1rem; color: var(--text-primary); }
+    [data-style="editorial"] .chart-container { border-bottom: 1px solid var(--border-color); padding-bottom: 2rem; margin-bottom: 2rem; }
+    [data-style="editorial"] .chart-container h4 { font-family: var(--heading-font); font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-secondary); margin-bottom: 1.5rem; }
+    .git-visualization { background: var(--panel-bg); border: var(--panel-border); border-radius: var(--panel-radius); padding: var(--panel-padding); margin: 2rem 0; }
+    [data-style="editorial"] .git-visualization { border-left: 3px solid var(--accent-blue); padding-left: 1.5rem; }
+    .branch-label { display: inline-block; background: var(--accent-green); color: var(--bg-primary); padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.85rem; font-weight: 600; margin-bottom: 1rem; }
+    .commits { position: relative; padding-left: 2rem; }
+    .commits::before { content: ''; position: absolute; left: 0.5rem; top: 0; bottom: 0; width: 2px; background: var(--accent-green); }
+    .git-commit { position: relative; display: flex; align-items: flex-start; margin-bottom: 1rem; padding: 0.5rem 0; }
+    .git-commit .node { position: absolute; left: -1.65rem; width: 12px; height: 12px; background: var(--accent-green); border-radius: 50%; border: 2px solid var(--bg-secondary); }
+    .git-commit .node.final { width: 16px; height: 16px; left: -1.75rem; background: linear-gradient(135deg, var(--accent-green), var(--accent-blue)); box-shadow: 0 0 10px rgba(63, 185, 80, 0.5); }
+    .commit-info { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+    .commit-info .tag { background: var(--bg-tertiary); color: var(--accent-blue); padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.8rem; }
+    .commit-info .message { color: var(--text-primary); }
+    .commit-info .improvement { color: var(--accent-green); font-weight: 600; }
+    .table-container { background: var(--panel-bg); border: var(--panel-border); border-radius: var(--panel-radius); padding: var(--panel-padding); margin: 2rem 0; overflow-x: auto; }
+    .table-container h4 { margin: 0 0 1rem; }
+    [data-style="editorial"] .table-container { padding: 0; }
+    [data-style="editorial"] .table-container h4 { font-family: var(--heading-font); font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-secondary); padding-bottom: 0.5rem; border-bottom: 1px solid var(--border-color); }
+    .generated-footer { margin-top: 4rem; padding-top: 2rem; border-top: 1px solid var(--border-color); text-align: center; color: var(--text-secondary); font-size: 0.9rem; }
+    .c4-diagram, .mermaid-diagram { background: var(--panel-bg); border: var(--panel-border); border-radius: var(--panel-radius); padding: var(--panel-padding); margin: 2rem 0; overflow: visible; }
+    .c4-diagram h4, .mermaid-diagram h4 { margin: 0 0 1rem; color: var(--text-primary); }
+    .c4-diagram .mermaid, .mermaid-diagram .mermaid { background: transparent; min-height: 400px; }
+    .c4-diagram svg, .mermaid-diagram svg { max-width: 100%; height: auto !important; overflow: visible; }
+    .c4-diagram .relation { stroke-width: 1.5px; }
+    .c4-diagram .messageText { font-size: 12px; fill: var(--text-secondary); }
+    .c4-diagram .boundary { overflow: visible; }
+    .mermaid-diagram .node rect, .mermaid-diagram .node polygon { fill: #438dd5 !important; stroke: #1168bd !important; }
+    .mermaid-diagram .node .label { color: #fff !important; }
+    .mermaid-diagram .cluster rect { fill: transparent !important; stroke: #444 !important; stroke-dasharray: 5,5; }
+    .mermaid-diagram .cluster span { color: var(--text-primary) !important; }
+    .mermaid-diagram .edgePath path { stroke: #666 !important; }
+    .mermaid-diagram .edgeLabel { background: var(--panel-bg) !important; }
+    [data-theme="light"] .mermaid-diagram .node rect, [data-theme="light"] .mermaid-diagram .node polygon { fill: #438dd5 !important; stroke: #1168bd !important; }
+    [data-theme="light"] .mermaid-diagram .cluster rect { stroke: #999 !important; }
+    .controls { position: fixed; top: 1.5rem; right: 1.5rem; display: flex; gap: 0.75rem; z-index: 1000; }
+    .control-btn { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--border-color); background: var(--bg-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.3s ease; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); }
+    .control-btn:hover { transform: scale(1.1); border-color: var(--accent-blue); }
+    .control-btn svg { width: 20px; height: 20px; fill: var(--text-primary); }
+    .theme-toggle .sun-icon { display: none; }
+    .theme-toggle .moon-icon { display: block; }
+    [data-theme="light"] .theme-toggle .sun-icon { display: block; }
+    [data-theme="light"] .theme-toggle .moon-icon { display: none; }
+    .style-toggle { font-family: var(--heading-font); font-size: 11px; font-weight: 700; }
+    .style-toggle .style-label { color: var(--text-primary); }
+    @media (max-width: 768px) { body { padding: 1rem; } h1 { font-size: 1.8rem; } }
+  </style>
+</head>
+<body>
+  <div class="controls">
+    <button class="control-btn style-toggle" onclick="cycleStyle()" title="Switch style"><span class="style-label">Aa</span></button>
+    <button class="control-btn theme-toggle" onclick="toggleTheme()" title="Toggle theme">
+      <svg class="sun-icon" viewBox="0 0 24 24"><path d="M12 17.5a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11zm0 1.5a7 7 0 1 1 0-14 7 7 0 0 1 0 14zm0-17a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0v-1.5A.75.75 0 0 1 12 2z"/></svg>
+      <svg class="moon-icon" viewBox="0 0 24 24"><path d="M9.37 5.51A7.35 7.35 0 0 0 9.1 7.5c0 4.08 3.32 7.4 7.4 7.4.68 0 1.35-.09 1.99-.27A7.014 7.014 0 0 1 12 19c-3.86 0-7-3.14-7-7 0-2.93 1.81-5.45 4.37-6.49z"/></svg>
+    </button>
+  </div>
+  <h1><a href="#durable-execution-book" id="durable-execution-book" class="anchor"></a>Durable Execution Book</h1>
+<h2><a href="#table-of-contents" id="table-of-contents" class="anchor"></a>Table of Contents</h2>
+<ol>
+<li><a href="#chapter-1-introduction">Introduction</a></li>
+<li><a href="#chapter-2-core-concepts">Core Concepts</a></li>
+<li><a href="#chapter-3-per-node-architecture">Per-Node Architecture</a></li>
+<li><a href="#chapter-4-cluster-protocol">Cluster Protocol</a></li>
+<li><a href="#chapter-5-workflow-routing">Workflow Routing</a></li>
+<li><a href="#chapter-6-failover-and-recovery">Failover and Recovery</a></li>
+<li><a href="#chapter-7-demonstrations">Demonstrations</a></li>
+</ol>
+<hr />
+<h2><a href="#chapter-1-introduction" id="chapter-1-introduction" class="anchor"></a>Chapter 1: Introduction</h2>
+<p>Durable execution is a programming model that makes distributed systems reliable by automatically handling failures, retries, and recovery. Instead of manually coding failure handling, developers write normal code that the runtime makes durable.</p>
+<h3><a href="#what-is-durable-execution" id="what-is-durable-execution" class="anchor"></a>What is Durable Execution?</h3>
+<p>When a workflow fails—whether from network issues, process crashes, or server restarts—durable execution automatically resumes from where it left off. This is possible because:</p>
+<ol>
+<li><strong>Journaling</strong>: Every operation is recorded to persistent storage before execution</li>
+<li><strong>Deterministic Replay</strong>: On recovery, the journal is replayed to reconstruct state</li>
+<li><strong>Idempotent Operations</strong>: Side effects are executed exactly once</li>
+</ol>
+<h3><a href="#why-durable-execution" id="why-durable-execution" class="anchor"></a>Why Durable Execution?</h3>
+<p>Traditional approaches to reliability require:</p>
+<ul>
+<li>Manual retry logic</li>
+<li>Complex state machines</li>
+<li>Distributed transactions</li>
+<li>Compensating transactions (sagas)</li>
+</ul>
+<p>Durable execution handles all of this automatically. You write:</p>
+<pre><code class="language-scala">def processOrder(ctx: Context, order: Order): Receipt = {
+  val payment = ctx.call(&quot;processPayment&quot;, order.paymentInfo)
+  val shipment = ctx.call(&quot;scheduleShipment&quot;, order.address)
+  Receipt(payment.id, shipment.trackingNumber)
+}
+</code></pre>
+<p>And the runtime ensures this completes exactly once, even across failures.</p>
+<hr />
+<h2><a href="#chapter-2-core-concepts" id="chapter-2-core-concepts" class="anchor"></a>Chapter 2: Core Concepts</h2>
+<h3><a href="#workflows" id="workflows" class="anchor"></a>Workflows</h3>
+<p>A workflow is a long-running business process that survives failures. Workflows are:</p>
+<ul>
+<li><strong>Stateful</strong>: Maintain state across calls and restarts</li>
+<li><strong>Durable</strong>: Persist progress to storage</li>
+<li><strong>Deterministic</strong>: Same inputs produce same outputs on replay</li>
+</ul>
+<pre><code class="language-scala">val orderWorkflow = Workflow[OrderInput, OrderOutput](&quot;process-order&quot;) {
+  (ctx, input) =&gt;
+    // Durable operations
+    val validated = ctx.call(&quot;validateOrder&quot;, input)
+    ctx.sleep(24.hours) // Durable timer!
+    val shipped = ctx.call(&quot;shipOrder&quot;, validated)
+    OrderOutput(shipped.trackingNumber)
+}
+</code></pre>
+<h3><a href="#journal" id="journal" class="anchor"></a>Journal</h3>
+<p>The journal is an append-only log of all operations a workflow has performed. Each entry includes:</p>
+<table>
+<thead>
+<tr><th>Field</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>sequenceNumber</code></td><td>Monotonically increasing position</td></tr>
+<tr><td><code>entryType</code></td><td>Call, SideEffect, Sleep, State</td></tr>
+<tr><td><code>name</code></td><td>Operation identifier</td></tr>
+<tr><td><code>inputJson</code></td><td>Serialized input (if any)</td></tr>
+<tr><td><code>outputJson</code></td><td>Serialized result (when complete)</td></tr>
+<tr><td><code>timestamp</code></td><td>When the entry was created</td></tr>
+<tr><td><code>completed</code></td><td>Whether the operation finished</td></tr>
+</tbody>
+</table>
+<h3><a href="#side-effects" id="side-effects" class="anchor"></a>Side Effects</h3>
+<p>Side effects are operations that interact with the outside world. They're recorded once and replayed from the journal:</p>
+<pre><code class="language-scala">ctx.sideEffect(&quot;sendEmail&quot;) {
+  emailService.send(to = user.email, subject = &quot;Order Confirmed&quot;)
+}
+</code></pre>
+<p>On replay, the side effect isn't re-executed—the stored result is returned.</p>
+<h3><a href="#durable-timers" id="durable-timers" class="anchor"></a>Durable Timers</h3>
+<p>Timers that survive process restarts:</p>
+<pre><code class="language-scala">ctx.sleep(30.minutes)  // Process can crash and resume after 30min
+</code></pre>
+<p>The timer is recorded to storage. If the process crashes, recovery checks for pending timers and resumes workflows when timers expire.</p>
+<hr />
+<h2><a href="#chapter-3-per-node-architecture" id="chapter-3-per-node-architecture" class="anchor"></a>Chapter 3: Per-Node Architecture</h2>
+<h3><a href="#embedded-storage-restate-style" id="embedded-storage-restate-style" class="anchor"></a>Embedded Storage (Restate-style)</h3>
+<p>Unlike traditional approaches with a central database, each node maintains its own embedded storage:</p>
+<pre><code>┌─────────────────────────────────────────────────┐
+│                    Node 1                        │
+│  ┌────────────┐  ┌────────────┐  ┌───────────┐  │
+│  │ Workflows  │  │  Runtime   │  │  Storage  │  │
+│  │  (active)  │──│            │──│ (RocksDB) │  │
+│  └────────────┘  └────────────┘  └───────────┘  │
+└─────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────┐
+│                    Node 2                        │
+│  ┌────────────┐  ┌────────────┐  ┌───────────┐  │
+│  │ Workflows  │  │  Runtime   │  │  Storage  │  │
+│  │  (active)  │──│            │──│ (LevelDB) │  │
+│  └────────────┘  └────────────┘  └───────────┘  │
+└─────────────────────────────────────────────────┘
+</code></pre>
+<p>Benefits:</p>
+<ul>
+<li><strong>No single point of failure</strong>: Each node is independent</li>
+<li><strong>Low latency</strong>: Local storage access</li>
+<li><strong>Horizontal scaling</strong>: Add nodes without bottlenecks</li>
+</ul>
+<h3><a href="#storage-backends" id="storage-backends" class="anchor"></a>Storage Backends</h3>
+<p>The system supports multiple embedded storage backends:</p>
+<table>
+<thead>
+<tr><th>Backend</th><th>Use Case</th></tr>
+</thead>
+<tbody>
+<tr><td>RocksDB</td><td>Production - high performance</td></tr>
+<tr><td>LevelDB</td><td>Lighter footprint</td></tr>
+<tr><td>In-Memory</td><td>Testing</td></tr>
+</tbody>
+</table>
+<pre><code class="language-scala">// Production
+val store = RocksDBStore.open(&quot;/data/node-1/durable&quot;)
+
+// Testing
+val store = InMemoryStore.open()
+
+// Create storage abstraction
+val storage = NodeStorage.make(store)
+</code></pre>
+<h3><a href="#noderuntime" id="noderuntime" class="anchor"></a>NodeRuntime</h3>
+<p>The <code>NodeRuntime</code> manages workflow execution on a single node:</p>
+<pre><code class="language-scala">val runtime = NodeRuntime.make(
+  storage = storage,
+  config = NodeConfig(
+    nodeId = &quot;node-1&quot;,
+    maxConcurrentWorkflows = 100
+  )
+)
+
+// Register functions
+runtime.register(&quot;processPayment&quot;) { (req: PaymentRequest) =&gt;
+  paymentService.charge(req)
+}
+
+// Submit workflows
+val handle = runtime.submit(orderWorkflow, OrderInput(&quot;order-123&quot;))
+</code></pre>
+<hr />
+<h2><a href="#chapter-4-cluster-protocol" id="chapter-4-cluster-protocol" class="anchor"></a>Chapter 4: Cluster Protocol</h2>
+<h3><a href="#swim-gossip-protocol" id="swim-gossip-protocol" class="anchor"></a>SWIM Gossip Protocol</h3>
+<p>The cluster uses SWIM (Scalable Weakly-consistent Infection-style Membership) for:</p>
+<ul>
+<li><strong>Membership detection</strong>: Which nodes are in the cluster</li>
+<li><strong>Failure detection</strong>: Identifying dead nodes</li>
+<li><strong>Information dissemination</strong>: Spreading updates</li>
+</ul>
+<h4><a href="#how-swim-works" id="how-swim-works" class="anchor"></a>How SWIM Works</h4>
+<ol>
+<li>Each node periodically pings a random member</li>
+<li>If no response, indirect ping through other nodes</li>
+<li>If still no response, mark as <strong>Suspect</strong></li>
+<li>After timeout, mark as <strong>Dead</strong></li>
+</ol>
+<pre><code>Node A              Node B              Node C
+   │                  │                   │
+   │──── PING ───────→│                   │
+   │                  │                   │
+   │←─── ACK ─────────│                   │
+   │                  │                   │
+   │──── PING ───────────────────────────→│
+   │                  │         (no ack)  │
+   │──── PING-REQ ───→│                   │
+   │                  │──── PING ────────→│
+   │                  │         (no ack)  │
+   │                  │──── NACK ────────→│
+   │                  │                   │
+   │  (mark C suspect)│                   │
+</code></pre>
+<h3><a href="#seed-nodes" id="seed-nodes" class="anchor"></a>Seed Nodes</h3>
+<p>New nodes bootstrap by connecting to seed nodes:</p>
+<pre><code class="language-scala">val config = ClusterConfig(
+  nodeId = NodeId(&quot;node-3&quot;),
+  bindAddress = NodeAddress(&quot;0.0.0.0&quot;, 7802),
+  seedNodes = List(
+    NodeAddress(&quot;seed1.cluster&quot;, 7800),
+    NodeAddress(&quot;seed2.cluster&quot;, 7800)
+  )
+)
+</code></pre>
+<p>The join process:</p>
+<ol>
+<li>Connect to seed node</li>
+<li>Send <code>Join</code> message with node info</li>
+<li>Receive <code>JoinAck</code> with full membership list</li>
+<li>Add self to hash ring</li>
+<li>Gossip propagates to other nodes</li>
+</ol>
+<h3><a href="#node-states" id="node-states" class="anchor"></a>Node States</h3>
+<table>
+<thead>
+<tr><th>State</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>Alive</code></td><td>Healthy and responsive</td></tr>
+<tr><td><code>Suspect</code></td><td>Missed heartbeats, may be failing</td></tr>
+<tr><td><code>Dead</code></td><td>Confirmed dead, removed from routing</td></tr>
+<tr><td><code>Left</code></td><td>Graceful departure</td></tr>
+</tbody>
+</table>
+<h3><a href="#incarnation-numbers" id="incarnation-numbers" class="anchor"></a>Incarnation Numbers</h3>
+<p>To handle stale updates, each node has an incarnation number:</p>
+<ul>
+<li>Starts at 0</li>
+<li>Incremented when refuting suspicion</li>
+<li>Higher incarnation always wins in conflicts</li>
+</ul>
+<hr />
+<h2><a href="#chapter-5-workflow-routing" id="chapter-5-workflow-routing" class="anchor"></a>Chapter 5: Workflow Routing</h2>
+<h3><a href="#consistent-hashing" id="consistent-hashing" class="anchor"></a>Consistent Hashing</h3>
+<p>Workflows are assigned to nodes using consistent hashing:</p>
+<pre><code>Hash Ring:
+      ┌─────────────────────────────────────┐
+      │                                     │
+   node-1                               node-2
+      │                                     │
+      │     workflow-123 hashes here        │
+      │            ↓                        │
+      └────────────●────────────────────────┘
+                   │
+                node-3
+
+workflow-123 → node-3 (first node clockwise)
+</code></pre>
+<h3><a href="#virtual-nodes" id="virtual-nodes" class="anchor"></a>Virtual Nodes</h3>
+<p>Each physical node creates multiple virtual nodes (default: 150) for uniform distribution:</p>
+<pre><code class="language-scala">val ring = HashRing(virtualNodesPerNode = 150)
+ring.addNode(NodeId(&quot;node-1&quot;))  // Creates 150 positions
+ring.addNode(NodeId(&quot;node-2&quot;))  // Creates 150 more
+ring.addNode(NodeId(&quot;node-3&quot;))  // Creates 150 more
+// Total: 450 virtual nodes on ring
+</code></pre>
+<h3><a href="#replication" id="replication" class="anchor"></a>Replication</h3>
+<p>For critical workflows, multiple replicas can be assigned:</p>
+<pre><code class="language-scala">val replicas = ring.getNodes(&quot;critical-workflow&quot;, count = 3)
+// Returns: [node-2, node-3, node-1] in ring order
+</code></pre>
+<h3><a href="#routing-logic" id="routing-logic" class="anchor"></a>Routing Logic</h3>
+<pre><code class="language-scala">def submit(workflowId: String, input: Input): Handle = {
+  val owner = hashRing.getNode(workflowId)
+
+  if (owner == localNodeId) {
+    // Execute locally
+    localRuntime.submit(workflow, input, workflowId)
+  } else {
+    // Forward to remote node
+    remoteExecutor.submitWorkflow(owner, workflowId, input)
+  }
+}
+</code></pre>
+<hr />
+<h2><a href="#chapter-6-failover-and-recovery" id="chapter-6-failover-and-recovery" class="anchor"></a>Chapter 6: Failover and Recovery</h2>
+<h3><a href="#node-failure-detection" id="node-failure-detection" class="anchor"></a>Node Failure Detection</h3>
+<p>When a node fails:</p>
+<ol>
+<li>Gossip protocol detects missed heartbeats</li>
+<li>Node marked as Suspect</li>
+<li>After timeout, marked as Dead</li>
+<li>Dead node removed from hash ring</li>
+<li>Workflows re-routed to new owners</li>
+</ol>
+<h3><a href="#workflow-migration" id="workflow-migration" class="anchor"></a>Workflow Migration</h3>
+<p>When the hash ring changes, workflows may need to migrate:</p>
+<pre><code>Before: workflow-123 → node-2
+After:  workflow-123 → node-3 (node-2 died)
+
+Migration:
+1. node-3 notices it now owns workflow-123
+2. Requests journal from replicas
+3. Replays journal to reconstruct state
+4. Resumes execution
+</code></pre>
+<h3><a href="#recovery-process" id="recovery-process" class="anchor"></a>Recovery Process</h3>
+<pre><code>1. Load WorkflowMetadata from storage
+2. Load JournalEntries for workflow
+3. Create new Context with replay mode
+4. Execute workflow handler
+   - For each operation:
+     - If in journal: return stored result
+     - If not in journal: execute and record
+5. Continue from where it left off
+</code></pre>
+<h3><a href="#exactly-once-semantics" id="exactly-once-semantics" class="anchor"></a>Exactly-Once Semantics</h3>
+<p>The combination of journaling and replay ensures:</p>
+<ul>
+<li>Operations execute exactly once</li>
+<li>Side effects are recorded and replayed</li>
+<li>External calls use idempotency keys</li>
+</ul>
+<hr />
+<h2><a href="#chapter-7-demonstrations" id="chapter-7-demonstrations" class="anchor"></a>Chapter 7: Demonstrations</h2>
+<p>The following demonstrations showcase durable execution patterns.</p>
+<h3><a href="#demo-1-ping-pong" id="demo-1-ping-pong" class="anchor"></a>Demo 1: Ping-Pong</h3>
+<p>Two workflows exchanging messages back and forth.</p>
+<p>
+<h3>Demo 1: Ping-Pong</h3>
+<p><strong>Two workflows exchange messages back and forth</strong></p>
+<pre><code>=== Demo 1: Ping-Pong ===
+[Alice] PING #1
+[Bob] Got PING #1 from Alice
+[Bob] PONG #2
+[Alice] Got PONG #2 from Bob
+[Alice] PING #3
+[Bob] Got PING #3 from Alice
+[Bob] PONG #4
+[Alice] Got PONG #4 from Bob
+[Alice] PING #5
+[Bob] Got PING #5 from Alice
+[Bob] PONG #6
+[Alice] Got PONG #6 from Bob
+[Alice] PING #7
+[Bob] Got PING #7 from Alice
+[Bob] PONG #8
+[Alice] Got PONG #8 from Bob
+[Alice] PING #9
+[Bob] Got PING #9 from Alice
+[Bob] PONG #10
+[Alice] Got PONG #10 from Bob
+[Alice] PING #11
+[Bob] Got PING #11 from Alice
+[Bob] PONG #12
+[Alice] Got PONG #12 from Bob
+[Alice] PING #13
+[Bob] Got PING #13 from Alice
+[Bob] PONG #14
+[Alice] Got PONG #14 from Bob
+[Alice] PING #15
+[Bob] Got PING #15 from Alice
+[Bob] PONG #16
+[Alice] Got PONG #16 from Bob
+[Alice] PING #17
+[Bob] Got PING #17 from Alice
+[Bob] PONG #18
+[Alice] Got PONG #18 from Bob
+[Alice] PING #19
+[Bob] Got PING #19 from Alice
+[Bob] PONG #20
+[Bob] Done
+[Alice] Got PONG #20 from Bob
+[Alice] Done
+=== Complete ===</code></pre>
+</p>
+<hr />
+<h3><a href="#demo-2-chat-session" id="demo-2-chat-session" class="anchor"></a>Demo 2: Chat Session</h3>
+<p>A conversation with multiple participants exchanging messages.</p>
+<p>
+<h3>Demo 2: Chat Session</h3>
+<p><strong>10 messages in a conversation</strong></p>
+<pre><code>=== Demo 2: Chat Session ===
+[Chat sess-1] Starting from message 0
+  [Alice]: Hello!
+  [Bob]: How are you?
+  [Charlie]: Good thanks!
+  [Alice]: Working on project
+  [Bob]: Cool!
+  [Charlie]: What's the plan?
+  [Alice]: About 2 weeks
+  [Bob]: Need help?
+  [Charlie]: Will let you know
+  [Alice]: Bye!
+Result: Some(Completed(Out(10)))
+=== Complete ===</code></pre>
+</p>
+<hr />
+<h3><a href="#demo-3-remote-commands" id="demo-3-remote-commands" class="anchor"></a>Demo 3: Remote Commands</h3>
+<p>Executing commands on remote services with results.</p>
+<p>
+<h3>Demo 3: Remote Commands</h3>
+<p><strong>Execute commands remotely</strong></p>
+<pre><code>=== Demo 3: Remote Commands ===
+  [Exec] ECHO(Hello) = Hello
+  [Exec] UPPER(world) = WORLD
+  [Exec] REVERSE(stressed) = desserts
+  [Exec] LEN(testing) = 7
+  [Exec] ADD(10,20,30) = 60
+  [Exec] ECHO(Done) = Done
+  [Exec] UPPER(loud) = LOUD
+  [Exec] REVERSE(level) = level
+  [Exec] LEN(abcdefghij) = 10
+  [Exec] ADD(1,2,3,4) = 10
+Results: Hello, WORLD, desserts, 7, 60, Done, LOUD, level, 10, 10
+=== Complete ===</code></pre>
+</p>
+<hr />
+<h3><a href="#demo-4-durable-counter" id="demo-4-durable-counter" class="anchor"></a>Demo 4: Durable Counter</h3>
+<p>A counter that survives crashes, demonstrating durable state.</p>
+<p>
+<h3>Demo 4: Durable Counter</h3>
+<p><strong>Counter with durable operations</strong></p>
+<pre><code>=== Demo 4: Durable Counter ===
+  0 + 10 = 10
+  10 + 5 = 15
+  15 * 2 = 30
+  30 - 3 = 27
+  27 + 7 = 34
+  34 * 3 = 102
+  102 - 10 = 92
+  92 + 1 = 93
+  93 -&gt; 0
+  0 + 100 = 100
+Final value: 100
+=== Complete ===</code></pre>
+</p>
+<hr />
+<h3><a href="#demo-5-saga-pattern" id="demo-5-saga-pattern" class="anchor"></a>Demo 5: Saga Pattern</h3>
+<p>Multi-step transactions with automatic compensation on failure.</p>
+<p>
+<h3>Demo 5: Saga Pattern</h3>
+<p><strong>Multi-step transaction with compensation</strong></p>
+<pre><code>=== Demo 5: Saga Pattern ===
+Scenario 1: Success
+  ✓ Hotel booked
+  ✓ Flight booked
+  ✓ Car booked
+  All bookings successful!
+Scenario 2: Flight fails
+  ✓ Hotel booked
+  ✗ Flight failed - Compensating...
+  ↩ Hotel cancelled
+Scenario 3: Car fails
+  ✓ Hotel booked
+  ✓ Flight booked
+  ✗ Car failed - Compensating...
+  ↩ Flight cancelled
+  ↩ Hotel cancelled
+=== Complete ===</code></pre>
+</p>
+<hr />
+<h3><a href="#demo-6-durable-timer" id="demo-6-durable-timer" class="anchor"></a>Demo 6: Durable Timer</h3>
+<p>Timers that survive process restarts.</p>
+<p>
+<h3>Demo 6: Durable Timer</h3>
+<p><strong>Timed events that survive restarts</strong></p>
+<pre><code>=== Demo 6: Durable Timer ===
+  Step 1: Slept 50ms (total: 57ms)
+  Step 2: Slept 100ms (total: 164ms)
+  Step 3: Slept 75ms (total: 245ms)
+  Step 4: Slept 50ms (total: 300ms)
+  Step 5: Slept 100ms (total: 405ms)
+  Step 6: Slept 75ms (total: 484ms)
+  Step 7: Slept 50ms (total: 538ms)
+  Step 8: Slept 100ms (total: 643ms)
+  Step 9: Slept 75ms (total: 721ms)
+  Step 10: Slept 50ms (total: 776ms)
+10 timed events completed
+=== Complete ===</code></pre>
+</p>
+<hr />
+<h3><a href="#demo-7-state-machine" id="demo-7-state-machine" class="anchor"></a>Demo 7: State Machine</h3>
+<p>Order processing with state transitions.</p>
+<p>
+<h3>Demo 7: State Machine</h3>
+<p><strong>Order processing state transitions</strong></p>
+<pre><code>=== Demo 7: Order State Machine ===
+Order 1:
+  [ORD-001] Items: Laptop, Mouse
+  [ORD-001] Created -&gt; Validated
+  [ORD-001] Validated -&gt; PaymentPending
+  [ORD-001] PaymentPending -&gt; Paid
+  [ORD-001] Paid -&gt; Preparing
+  [ORD-001] Preparing -&gt; Shipped
+  [ORD-001] Shipped -&gt; InTransit
+  [ORD-001] InTransit -&gt; Delivered
+  Final: Delivered (7 transitions)
+Order 2:
+  [ORD-002] Items: Monitor
+  [ORD-002] Created -&gt; Validated
+  [ORD-002] Validated -&gt; PaymentPending
+  [ORD-002] PaymentPending -&gt; Paid
+  [ORD-002] Paid -&gt; Preparing
+  [ORD-002] Preparing -&gt; Shipped
+  [ORD-002] Shipped -&gt; InTransit
+  [ORD-002] InTransit -&gt; Delivered
+  Final: Delivered (7 transitions)
+Order 3:
+  [ORD-003] Items: Keyboard, Webcam
+  [ORD-003] Created -&gt; Validated
+  [ORD-003] Validated -&gt; PaymentPending
+  [ORD-003] PaymentPending -&gt; Paid
+  [ORD-003] Paid -&gt; Preparing
+  [ORD-003] Preparing -&gt; Shipped
+  [ORD-003] Shipped -&gt; InTransit
+  [ORD-003] InTransit -&gt; Delivered
+  Final: Delivered (7 transitions)
+=== Complete ===</code></pre>
+</p>
+<hr />
+<h3><a href="#demo-8-parallel-fan-out" id="demo-8-parallel-fan-out" class="anchor"></a>Demo 8: Parallel Fan-Out</h3>
+<p>Distributing work to parallel workers and collecting results.</p>
+<p>
+<h3>Demo 8: Parallel Fan-Out</h3>
+<p><strong>Distribute tasks to workers</strong></p>
+<pre><code>=== Demo 8: Parallel Fan-Out ===
+Distributing 10 tasks...
+  [W1] Task 1: 10² = 100
+  [W2] Task 2: 20² = 400
+  [W3] Task 3: 30² = 900
+  [W0] Task 4: 40² = 1600
+  [W1] Task 5: 50² = 2500
+  [W2] Task 6: 60² = 3600
+  [W3] Task 7: 70² = 4900
+  [W0] Task 8: 80² = 6400
+  [W2] Task 10: 100² = 10000
+  [W1] Task 9: 90² = 8100
+Results: 100, 400, 900, 1600, 2500, 3600, 4900, 6400, 8100, 10000
+Total time: 222ms
+=== Complete ===</code></pre>
+</p>
+<hr />
+<h3><a href="#demo-9-automatic-retry" id="demo-9-automatic-retry" class="anchor"></a>Demo 9: Automatic Retry</h3>
+<p>Retrying on transient failures with exponential backoff.</p>
+<p>
+<h3>Demo 9: Automatic Retry</h3>
+<p><strong>Retry on transient failures</strong></p>
+<pre><code>=== Demo 9: Automatic Retry ===
+  Calling /ok (will fail 0 times)...
+    [API] /ok attempt 1 SUCCESS
+  Calling /fails-2x (will fail 2 times)...
+    [API] /fails-2x attempt 1 FAILED
+    Retry in 50ms...
+    [API] /fails-2x attempt 2 FAILED
+    Retry in 100ms...
+    [API] /fails-2x attempt 3 SUCCESS
+  Calling /fails-3x (will fail 3 times)...
+    [API] /fails-3x attempt 1 FAILED
+    Retry in 50ms...
+    [API] /fails-3x attempt 2 FAILED
+    Retry in 100ms...
+    [API] /fails-3x attempt 3 FAILED
+    Retry in 150ms...
+    [API] /fails-3x attempt 4 SUCCESS
+  Calling /always-fails (will fail 10 times)...
+    [API] /always-fails attempt 1 FAILED
+    Retry in 50ms...
+    [API] /always-fails attempt 2 FAILED
+    Retry in 100ms...
+    [API] /always-fails attempt 3 FAILED
+    Retry in 150ms...
+    [API] /always-fails attempt 4 FAILED
+    Retry in 200ms...
+    [API] /always-fails attempt 5 FAILED
+  Calling /ok-2 (will fail 0 times)...
+    [API] /ok-2 attempt 1 SUCCESS
+  Calling /fails-1x (will fail 1 times)...
+    [API] /fails-1x attempt 1 FAILED
+    Retry in 50ms...
+    [API] /fails-1x attempt 2 SUCCESS
+  Calling /ok-3 (will fail 0 times)...
+    [API] /ok-3 attempt 1 SUCCESS
+  Calling /fails-2x-b (will fail 2 times)...
+    [API] /fails-2x-b attempt 1 FAILED
+    Retry in 50ms...
+    [API] /fails-2x-b attempt 2 FAILED
+    Retry in 100ms...
+    [API] /fails-2x-b attempt 3 SUCCESS
+  Calling /ok-4 (will fail 0 times)...
+    [API] /ok-4 attempt 1 SUCCESS
+  Calling /fails-1x-b (will fail 1 times)...
+    [API] /fails-1x-b attempt 1 FAILED
+    Retry in 50ms...
+    [API] /fails-1x-b attempt 2 SUCCESS
+--- Summary ---
+  ✓ /ok: OK from /ok
+  ✓ /fails-2x: OK from /fails-2x
+  ✓ /fails-3x: OK from /fails-3x
+  ✗ /always-fails: FAILED: Transient failure
+  ✓ /ok-2: OK from /ok-2
+  ✓ /fails-1x: OK from /fails-1x
+  ✓ /ok-3: OK from /ok-3
+  ✓ /fails-2x-b: OK from /fails-2x-b
+  ✓ /ok-4: OK from /ok-4
+  ✓ /fails-1x-b: OK from /fails-1x-b
+=== Complete ===</code></pre>
+</p>
+<hr />
+<h3><a href="#demo-10-checkpoint-recovery" id="demo-10-checkpoint-recovery" class="anchor"></a>Demo 10: Checkpoint Recovery</h3>
+<p>Checkpointing progress and resuming after crashes.</p>
+<p>
+<h3>Demo 10: Checkpoint Recovery</h3>
+<p><strong>Resume from crash</strong></p>
+<pre><code>=== Demo 10: Checkpoint and Recovery ===
+Phase 1: Run until crash at item 5
+  [batch-001] Starting from item 0
+  [batch-001] Processed batch-001-0
+  [batch-001] Processed batch-001-1
+  [batch-001] Processed batch-001-2
+  [batch-001] *** CHECKPOINT at 3 ***
+  [batch-001] Processed batch-001-3
+  [batch-001] Processed batch-001-4
+  [batch-001] !!! CRASH at item 5 !!!
+Phase 2: Resume after 'restart' (items 0-4 not reprocessed)
+  [batch-001] Resuming from item 5
+  [batch-001] *** CHECKPOINT at 6 ***
+  [batch-001] *** CHECKPOINT at 9 ***
+--- Verification ---
+  Total unique items: 5 (expected: 10)
+  No duplicates: false
+=== Complete ===</code></pre>
+</p>
+<hr />
+<h3><a href="#demo-11-multi-node-cluster-formation" id="demo-11-multi-node-cluster-formation" class="anchor"></a>Demo 11: Multi-Node Cluster Formation</h3>
+<p>Cluster formation using SWIM gossip, seed nodes, and automatic node discovery.</p>
+<p>
+<h3>Demo 11: Multi-Node Cluster</h3>
+<p><strong>Cluster formation with SWIM gossip</strong></p>
+<pre><code>============================================================
+Demo 11: Multi-Node Cluster Formation
+============================================================
+This demo shows 3 nodes forming a cluster using SWIM gossip.
+Nodes discover each other automatically via seed nodes.
+--- Phase 1: Starting Seed Node ---
+Starting node-1 (seed node) on port 7800...
+  ✓ node-1 started as seed
+  ✓ node-1 sees 1 alive member(s)
+--- Phase 2: Nodes Join via Seed ---
+Starting node-2 on port 7801 (joining via seed at 7800)...
+  ✓ node-2 joined cluster
+Starting node-3 on port 7802 (joining via seed at 7800)...
+  ✓ node-3 joined cluster
+--- Phase 3: Cluster State ---
+All nodes discover each other via gossip propagation:
+  node-1 sees: node-3, node-2, node-1
+  node-2 sees: node-3, node-2, node-1
+  node-3 sees: node-3, node-2, node-1
+Cluster statistics:
+  node-1: 3 alive, 3 in hash ring
+  node-2: 3 alive, 3 in hash ring
+  node-3: 3 alive, 3 in hash ring
+--- Phase 4: Workflow Routing Preview ---
+Consistent hashing routes workflows to specific nodes:
+  workflow-1 → node-1 (local to node-1)
+  workflow-2 → node-2
+  workflow-3 → node-2
+  workflow-4 → node-2
+  workflow-5 → node-1 (local to node-1)
+  workflow-6 → node-2
+--- Phase 5: Graceful Shutdown ---
+Stopping all nodes...
+  ✓ All nodes stopped
+============================================================
+Demo 11 Complete
+============================================================</code></pre>
+</p>
+<hr />
+<h3><a href="#demo-12-distributed-workflow-execution" id="demo-12-distributed-workflow-execution" class="anchor"></a>Demo 12: Distributed Workflow Execution</h3>
+<p>Workflows routed to and executed on specific nodes via consistent hashing.</p>
+<p>
+<h3>Demo 12: Distributed Execution</h3>
+<p><strong>Workflow routing via consistent hashing</strong></p>
+<pre><code>============================================================
+Demo 12: Distributed Workflow Execution
+============================================================
+This demo shows workflows being routed to and executed on
+specific nodes based on consistent hashing.
+--- Setting Up 3-Node Cluster ---
+Starting node-1 (seed)...
+Starting node-2...
+Starting node-3...
+Cluster ready: 3 nodes
+--- Submitting Workflows to Cluster ---
+Each workflow ID is hashed to determine its owner node.
+Workflows are executed locally on their assigned node.
+Workflow routing based on consistent hashing:
+  task-alpha → node-2 (square(5))
+  task-beta → node-1 (double(7))
+  task-gamma → node-1 (triple(3))
+  task-delta → node-3 (square(4))
+  task-epsilon → node-3 (double(10))
+  task-zeta → node-2 (triple(6))
+--- Workflow Distribution ---
+Tasks distributed across nodes:
+  node-1: ██░░░░ (2 tasks)
+  node-2: ██░░░░ (2 tasks)
+  node-3: ██░░░░ (2 tasks)
+Note: Consistent hashing ensures workflows route to the same
+      node every time, enabling local state and durability.
+--- Cleanup ---
+All nodes stopped.
+============================================================
+Demo 12 Complete
+============================================================</code></pre>
+</p>
+<hr />
+<h3><a href="#demo-13-node-failure-and-rebalancing" id="demo-13-node-failure-and-rebalancing" class="anchor"></a>Demo 13: Node Failure and Rebalancing</h3>
+<p>What happens when a node fails: detection, rerouting, and recovery.</p>
+<p>
+<h3>Demo 13: Failure & Rebalancing</h3>
+<p><strong>Node failure detection and recovery</strong></p>
+<pre><code>============================================================
+Demo 13: Node Failure and Rebalancing
+============================================================
+This demo shows what happens when a cluster node fails.
+The remaining nodes detect the failure and rebalance work.
+--- Phase 1: Cluster Formation ---
+Starting 3-node cluster...
+  ✓ Cluster ready: 3 nodes
+--- Phase 2: Initial Workflow Routing ---
+Initial workflow routing (all 3 nodes):
+  workflow-1 → node-1
+  workflow-2 → node-2
+  workflow-3 → node-2
+  workflow-4 → node-2
+  workflow-5 → node-1
+  workflow-6 → node-2
+Distribution:
+  node-1: 2 workflows
+  node-2: 4 workflows
+  node-3: 0 workflows
+--- Phase 3: Simulating Node Failure ---
+ALERT: node-2 has crashed!
+  ✓ SWIM gossip would detect failure via ping timeouts
+  ✓ Node marked as SUSPECT then DEAD after timeout
+--- Phase 4: Routing After Failure ---
+After node-2 failure, workflows are rerouted to surviving nodes:
+  workflow-1 → node-1
+  workflow-2 → node-3
+  workflow-3 → node-3
+  workflow-4 → node-3
+  workflow-5 → node-1
+  workflow-6 → node-3
+New distribution (node-2 workflows redistributed):
+  node-1: 2 workflows (was 2)
+  node-2: DOWN
+  node-3: 4 workflows (was 0)
+--- Phase 5: Workflow Recovery Process ---
+When a node fails, workflows owned by that node need recovery:
+  1. Detect failure via SWIM gossip (ping timeout)
+  2. Mark node as SUSPECT, then DEAD after confirmation
+  3. Update hash ring to exclude dead node
+  4. New owner node loads workflow state from durable storage
+  5. Workflow resumes from last journaled checkpoint
+With durable execution, NO WORK IS LOST - journals survive failures.
+--- Phase 6: Adding Replacement Node ---
+Starting node-4 as replacement...
+  ✓ node-4 joined cluster
+Cluster now has 2 nodes
+Final routing with replacement node-4:
+  workflow-1 → node-1
+  workflow-2 → node-4
+  workflow-3 → node-4
+  workflow-4 → node-3
+  workflow-5 → node-1
+  workflow-6 → node-3
+Distribution with node-4:
+  node-1: 2 workflows
+  node-3: 2 workflows
+  node-4: 2 workflows (new)
+--- Cleanup ---
+All nodes stopped.
+============================================================
+Demo 13 Complete
+============================================================</code></pre>
+</p>
+<hr />
+<h2><a href="#appendix-configuration-reference" id="appendix-configuration-reference" class="anchor"></a>Appendix: Configuration Reference</h2>
+<h3><a href="#cluster-configuration" id="cluster-configuration" class="anchor"></a>Cluster Configuration</h3>
+<table>
+<thead>
+<tr><th>Parameter</th><th>Default</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>gossipInterval</code></td><td>1s</td><td>How often to ping random nodes</td></tr>
+<tr><td><code>suspectTimeout</code></td><td>5s</td><td>How long before suspect becomes dead</td></tr>
+<tr><td><code>deadTimeout</code></td><td>30s</td><td>How long to keep dead nodes in list</td></tr>
+<tr><td><code>virtualNodesPerNode</code></td><td>150</td><td>Virtual nodes per physical node</td></tr>
+<tr><td><code>rpcTimeout</code></td><td>30s</td><td>Timeout for RPC calls</td></tr>
+</tbody>
+</table>
+<h3><a href="#environment-variables" id="environment-variables" class="anchor"></a>Environment Variables</h3>
+<pre><code class="language-bash">CLUSTER_NODE_ID=node-1
+CLUSTER_BIND_HOST=0.0.0.0
+CLUSTER_BIND_PORT=7800
+CLUSTER_SEED_NODES=seed1:7800,seed2:7800
+</code></pre>
+<hr />
+<p><em>This book was auto-generated. Demo outputs are captured from actual program execution.</em></p>
+
+  <script>
+    const STYLES = ['modern', 'editorial'];
+    function cycleStyle() {
+      const html = document.documentElement;
+      const current = html.getAttribute('data-style') || 'modern';
+      const next = STYLES[(STYLES.indexOf(current) + 1) % STYLES.length];
+      html.setAttribute('data-style', next);
+      localStorage.setItem('style', next);
+      document.querySelector('.style-label').textContent = next === 'modern' ? 'Aa' : 'Ed';
+    }
+    function toggleTheme() {
+      const html = document.documentElement;
+      const current = html.getAttribute('data-theme');
+      const next = current === 'dark' ? 'light' : 'dark';
+      html.setAttribute('data-theme', next);
+      localStorage.setItem('theme', next);
+      document.getElementById('hljs-theme-dark').disabled = (next === 'light');
+      document.getElementById('hljs-theme-light').disabled = (next !== 'light');
+    }
+    (function() {
+      const style = document.documentElement.getAttribute('data-style') || 'editorial';
+      document.querySelector('.style-label').textContent = style === 'modern' ? 'Aa' : 'Ed';
+      if (typeof hljs !== 'undefined') hljs.highlightAll();
+    })();
+  </script>
+</body>
+</html>

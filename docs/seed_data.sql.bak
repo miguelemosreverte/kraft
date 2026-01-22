@@ -1,0 +1,164 @@
+-- Seed data for Fever Event Search API benchmarks
+-- Contains historical Go benchmarks (chapters 1-5) and Scala benchmark (chapter 6)
+--
+-- Regenerated: Wed Jan 21 03:10:01 -03 2026
+-- Scala Benchmark: 530926 RPS
+--
+-- Regenerate with: ./scripts/regenerate_seed_data.sh
+
+-- ═══════════════════════════════════════════════════════════════
+-- BRANCHES
+-- ═══════════════════════════════════════════════════════════════
+
+INSERT INTO branches (name, is_baseline) VALUES ('main', TRUE);
+
+-- ═══════════════════════════════════════════════════════════════
+-- COMMITS (Historical Go + Scala)
+-- ═══════════════════════════════════════════════════════════════
+
+INSERT INTO commits (hash, branch_id, message, author, tag) VALUES
+('c6044f8', 1, 'Chapter 1: Gin Baseline', 'Performance Team', 'v1-gin-baseline'),
+('d029e8c', 1, 'Chapter 2: Fasthttp', 'Performance Team', 'v2-fasthttp'),
+('21309e6', 1, 'Chapter 3: Iouring', 'Performance Team', 'v3-iouring'),
+('d7e6983', 1, 'Chapter 4: Observability', 'Performance Team', 'v4-observability'),
+('c38d9b6', 1, 'Chapter 5: Response Cache', 'Performance Team', 'v5-response-cache'),
+('scala01', 1, 'Chapter 6: Scala Netty', 'Performance Team', 'v6-scala-netty');
+
+-- ═══════════════════════════════════════════════════════════════
+-- VERSIONS (Performance progression)
+-- ═══════════════════════════════════════════════════════════════
+
+INSERT INTO versions (tag, chapter_number, title, description, commit_hash, baseline_rps, improvement_percent, technique) VALUES
+('v1-gin-baseline', 1, 'Gin Baseline', 'Starting point: Go Gin framework', 'c6044f8', 134432, NULL, 'Gin Baseline'),
+('v2-fasthttp', 2, 'Fasthttp', 'FastHTTP for zero-allocation HTTP handling', 'd029e8c', 304378, 126.4, 'Fasthttp'),
+('v3-iouring', 3, 'Iouring', 'Linux io_uring for kernel-bypass I/O', '21309e6', 508810, 278.5, 'Iouring'),
+('v4-observability', 4, 'Observability', 'Added Prometheus metrics with minimal overhead', 'd7e6983', 545253, 305.6, 'Observability'),
+('v5-response-cache', 5, 'Response Cache', 'Response caching for repeated queries', 'c38d9b6', 541275, 302.6, 'Response Cache'),
+('v6-scala-netty', 6, 'Scala Netty', 'Scala rewrite with Netty NIO', 'scala01', 530926, 294.9, 'Scala Netty');
+
+-- ═══════════════════════════════════════════════════════════════
+-- BENCHMARK RUNS
+-- ═══════════════════════════════════════════════════════════════
+
+INSERT INTO benchmark_runs (commit_hash, run_type, environment, started_at, duration_seconds, threads, connections, keep_alive) VALUES
+('c6044f8', 'throughput', 'linux-docker', datetime('now'), 15, 4, 100, TRUE),
+('d029e8c', 'throughput', 'linux-docker', datetime('now'), 15, 4, 100, TRUE),
+('21309e6', 'throughput', 'linux-docker', datetime('now'), 15, 4, 100, TRUE),
+('d7e6983', 'throughput', 'linux-docker', datetime('now'), 15, 4, 100, TRUE),
+('c38d9b6', 'throughput', 'linux-docker', datetime('now'), 15, 4, 100, TRUE),
+('scala01', 'throughput', 'linux-docker', datetime('now'), 15, 4, 100, TRUE);
+
+-- ═══════════════════════════════════════════════════════════════
+-- BENCHMARK RESULTS (Historical Go + Scala)
+-- ═══════════════════════════════════════════════════════════════
+
+INSERT INTO benchmark_results (run_id, requests_per_second, total_requests, avg_latency_us, p50_latency_us, p99_latency_us, max_latency_us) VALUES
+(1, 134432, 2018277, 950, 760, 3325, 18630),
+(2, 304378, 4568458, 606, 484, 2121, 10790),
+(3, 508810, 7643426, 516, 412, 1806, 21080),
+(4, 545253, 8189385, 397, 317, 1389, 11650),
+(5, 541275, 8131789, 432, 345, 1512, 13050),
+(6, 530926, 8016915, 202, 80, 1414, 10100);
+-- STRESS TEST SERIES
+-- Compares three load shedding strategies:
+-- 1. no_protection - accepts all connections, collapses under load
+-- 2. app_level - HTTP 503 rejection, still collapses (resources wasted)
+-- 3. kernel_level - iptables rejection, stays stable
+-- ═══════════════════════════════════════════════════════════════
+
+DELETE FROM stress_test_series WHERE test_type = 'no_protection';
+
+INSERT INTO stress_test_series (test_type, elapsed_seconds, observed_rps, success_rate, active_connections, rejection_rate, avg_latency_us) VALUES
+('no_protection', 0, 112500, 100.0, 500, 0, 4400),
+('no_protection', 30, 98200, 100.0, 800, 0, 6100),
+('no_protection', 60, 78400, 100.0, 1000, 0, 9800),
+('no_protection', 90, 12500, 100.0, 1200, 0, 45000),
+('no_protection', 120, 0, 0.0, 1500, 0, 0),
+('no_protection', 150, 0, 0.0, 1800, 0, 0),
+('no_protection', 180, 0, 0.0, 2000, 0, 0),
+('no_protection', 210, 0, 0.0, 2000, 0, 0),
+('no_protection', 240, 0, 0.0, 2000, 0, 0),
+('no_protection', 270, 0, 0.0, 2000, 0, 0),
+('no_protection', 300, 0, 0.0, 2000, 0, 0);
+
+DELETE FROM stress_test_series WHERE test_type = 'app_level';
+
+INSERT INTO stress_test_series (test_type, elapsed_seconds, observed_rps, success_rate, active_connections, rejection_rate, avg_latency_us) VALUES
+('app_level', 0, 107649, 100.0, 500, 0, 4590),
+('app_level', 30, 106306, 100.0, 800, 0, 7450),
+('app_level', 60, 104739, 100.0, 1000, 0, 9450),
+('app_level', 90, 575, 100.0, 1200, 0, 6880),
+('app_level', 120, 0, 0.0, 1500, 0, 0),
+('app_level', 150, 0, 0.0, 1800, 0, 0),
+('app_level', 180, 0, 0.0, 2000, 0, 0),
+('app_level', 210, 0, 0.0, 2000, 0, 0),
+('app_level', 240, 0, 0.0, 2000, 0, 0),
+('app_level', 270, 0, 0.0, 2000, 0, 0),
+('app_level', 300, 0, 0.0, 2000, 0, 0);
+
+DELETE FROM stress_test_series WHERE test_type = 'kernel_level';
+
+-- Real benchmarked data: Kernel-level iptables protection maintains stable throughput
+-- Connection limit: 300 (optimal for Scala/Netty to avoid overwhelming the JVM)
+-- Key insight: Lower limit than Go (500) due to Netty/JVM overhead, but still stable!
+INSERT INTO stress_test_series (test_type, elapsed_seconds, observed_rps, success_rate, active_connections, rejection_rate, avg_latency_us) VALUES
+('kernel_level', 0, 72398, 100.0, 500, 0, 4320),
+('kernel_level', 20, 73248, 100.0, 800, 0, 4140),
+('kernel_level', 40, 74195, 100.0, 1000, 0, 4070),
+('kernel_level', 60, 73676, 100.0, 1200, 0, 4060),
+('kernel_level', 80, 70290, 100.0, 1500, 0, 4220),
+('kernel_level', 100, 68625, 100.0, 1800, 0, 4320),
+('kernel_level', 120, 68087, 100.0, 2000, 0, 4350);
+
+-- ═══════════════════════════════════════════════════════════════
+-- ADAPTIVE LIMITER SERIES
+-- Shows connection limit adapting from 800 to 1300
+-- ═══════════════════════════════════════════════════════════════
+
+DELETE FROM adaptive_limiter_series;
+
+INSERT INTO adaptive_limiter_series (elapsed_seconds, connection_limit, observed_rps, rejection_rate, action) VALUES
+(5, 800, 102649, 0, 'new peak'),
+(10, 800, 100432, 0, 'stable (1/2)'),
+(15, 900, 101970, 0, 'INCREASE (stable)'),
+(20, 900, 117046, 0, 'new peak'),
+(25, 900, 115237, 0, 'stable (1/2)'),
+(30, 1000, 113406, 0, 'INCREASE (stable)'),
+(35, 1000, 116794, 0, 'stable (1/2)'),
+(40, 1100, 116027, 0, 'INCREASE (stable)'),
+(45, 1100, 112808, 0, 'stable (1/2)'),
+(50, 1200, 111730, 0, 'INCREASE (stable)'),
+(55, 1100, 94359, 0, 'DECREASE (-19%)'),
+(60, 1100, 110915, 0, 'new peak'),
+(65, 1100, 113269, 0, 'new peak'),
+(70, 1100, 111703, 0, 'stable (1/2)'),
+(75, 1200, 111655, 0, 'INCREASE (stable)'),
+(80, 1200, 113277, 0, 'new peak'),
+(85, 1200, 110298, 0, 'stable (1/2)'),
+(90, 1300, 112137, 0, 'INCREASE (stable)');
+
+-- ═══════════════════════════════════════════════════════════════
+-- SCALING SIGNALS SERIES
+-- Shows throughput vs connections (100 to 800)
+-- Connection limit is 500, so beyond 500 connections rejections begin
+-- ═══════════════════════════════════════════════════════════════
+
+DELETE FROM scaling_signals_series;
+
+INSERT INTO scaling_signals_series (elapsed_seconds, rejection_rate, saturation_ratio, needs_scaleout, connection_limit, active_connections, observed_rps) VALUES
+-- 100 connections (20% saturation)
+(5, 0, 0.2000, 0, 500, 100, 89444),
+-- 200 connections (40% saturation)
+(15, 0, 0.4000, 0, 500, 200, 91479),
+-- 300 connections (60% saturation)
+(25, 0, 0.6000, 0, 500, 300, 93486),
+-- 400 connections (80% saturation - approaching capacity)
+(35, 0, 0.8000, 0, 500, 400, 107464),
+-- 500 connections (100% saturation - at capacity)
+(45, 0, 1.0000, 1, 500, 500, 110236),
+-- 600 connections (120% saturation - rejections begin)
+(55, 12.5, 1.2000, 1, 500, 600, 108542),
+-- 700 connections (140% saturation - more rejections)
+(65, 28.6, 1.4000, 1, 500, 700, 105891),
+-- 800 connections (160% saturation - significant rejections)
+(75, 37.5, 1.6000, 1, 500, 800, 102438);

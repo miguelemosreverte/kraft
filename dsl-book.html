@@ -1,0 +1,1339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kraft Event Search API - Performance Journey</title>
+  <script>
+    (function() {
+      var savedTheme = localStorage.getItem('theme');
+      var savedStyle = localStorage.getItem('style');
+      var theme = savedTheme;
+      if (!theme) {
+        theme = (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+      }
+      var style = savedStyle || 'editorial';
+      document.documentElement.setAttribute('data-theme', theme);
+      document.documentElement.setAttribute('data-style', style);
+    })();
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: document.documentElement.getAttribute('data-theme') === 'light' ? 'default' : 'dark',
+      flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' }
+    });
+  </script>
+  <script src="c4-renderer.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" id="hljs-theme-dark">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css" id="hljs-theme-light">
+  <script>
+    (function() {
+      var theme = document.documentElement.getAttribute('data-theme');
+      document.getElementById('hljs-theme-dark').disabled = (theme === 'light');
+      document.getElementById('hljs-theme-light').disabled = (theme !== 'light');
+    })();
+  </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/go.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/scala.min.js"></script>
+  <style>
+    :root, [data-theme="dark"] {
+      --bg-primary: #0d1117;
+      --bg-secondary: #161b22;
+      --bg-tertiary: #21262d;
+      --text-primary: #c9d1d9;
+      --text-secondary: #8b949e;
+      --gray-50: #f9fafb;
+      --gray-100: #f3f4f6;
+      --gray-200: #e5e7eb;
+      --gray-300: #d1d5db;
+      --gray-400: #9ca3af;
+      --gray-500: #6b7280;
+      --gray-600: #4b5563;
+      --gray-700: #374151;
+      --gray-800: #1f2937;
+      --gray-900: #111827;
+      --accent-primary: #c9d1d9;
+      --accent-green: #c9d1d9;
+      --accent-blue: #58a6ff;
+      --accent-orange: #d29922;
+      --accent-red: #f85149;
+      --accent-purple: #a371f7;
+      --border-color: #30363d;
+      --code-bg: #21262d;
+      --heading-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      --body-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      --panel-radius: 8px;
+      --panel-border: 1px solid var(--border-color);
+      --panel-bg: var(--bg-secondary);
+      --panel-padding: 1.5rem;
+    }
+    [data-theme="light"] {
+      --bg-primary: #ffffff;
+      --bg-secondary: #f6f8fa;
+      --bg-tertiary: #eaeef2;
+      --text-primary: #1f2328;
+      --text-secondary: #656d76;
+      --accent-primary: #374151;
+      --accent-green: #374151;
+      --accent-blue: #0969da;
+      --accent-orange: #9a6700;
+      --accent-red: #cf222e;
+      --accent-purple: #8250df;
+      --border-color: #d0d7de;
+      --code-bg: #eaeef2;
+    }
+    [data-style="editorial"] {
+      --heading-font: 'Georgia', 'Times New Roman', serif;
+      --body-font: 'Georgia', 'Times New Roman', serif;
+      --panel-radius: 0;
+      --panel-border: none;
+      --panel-bg: transparent;
+      --panel-padding: 0;
+    }
+    [data-style="editorial"][data-theme="dark"] {
+      --bg-primary: #1a1a1a;
+      --bg-secondary: #1a1a1a;
+      --bg-tertiary: #2a2a2a;
+      --text-primary: #e8e8e8;
+      --text-secondary: #999999;
+      --border-color: #333333;
+    }
+    [data-style="editorial"][data-theme="light"] {
+      --bg-primary: #faf9f6;
+      --bg-secondary: #faf9f6;
+      --bg-tertiary: #f0efe9;
+      --text-primary: #222222;
+      --text-secondary: #666666;
+      --border-color: #dddddd;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { background: var(--bg-primary); }
+    body {
+      font-family: var(--body-font);
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      line-height: 1.6;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+    canvas { background: transparent !important; }
+    h1, h2, h3, h4 {
+      font-family: var(--heading-font);
+      color: var(--text-primary);
+      margin: 2rem 0 1rem;
+      font-weight: 600;
+    }
+    h1 { font-size: 2.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem; }
+    h2 { font-size: 1.8rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.3rem; }
+    h3 { font-size: 1.4rem; }
+    h4 { font-size: 1.1rem; color: var(--text-secondary); }
+    [data-style="editorial"] h1 { font-size: 2.8rem; font-weight: 700; letter-spacing: -0.02em; border-bottom: 2px solid var(--text-primary); }
+    [data-style="editorial"] h2 { font-size: 1.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 3rem; }
+    [data-style="editorial"] h3 { font-size: 1.3rem; font-weight: 600; font-style: italic; }
+    [data-style="editorial"] p { font-size: 1.05rem; line-height: 1.75; }
+    p { margin: 1rem 0; }
+    em { color: var(--text-secondary); font-style: italic; }
+    strong { color: var(--accent-green); font-weight: 600; }
+    a { color: var(--accent-blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code {
+      background: var(--bg-tertiary);
+      padding: 0.2rem 0.4rem;
+      border-radius: 4px;
+      font-family: 'SFMono-Regular', Consolas, monospace;
+      font-size: 0.9em;
+    }
+    pre {
+      background: var(--bg-secondary) !important;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 1rem;
+      overflow-x: auto;
+      margin: 1rem 0;
+    }
+    pre code { background: transparent !important; padding: 0; }
+    pre code.hljs, .hljs { background: transparent !important; }
+    hr { border: none; border-top: 1px solid var(--border-color); margin: 3rem 0; }
+    table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+    th, td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid var(--border-color); }
+    th { background: var(--bg-secondary); font-weight: 600; color: var(--text-secondary); }
+    tr:hover { background: var(--bg-secondary); }
+    ul, ol { margin: 1rem 0; padding-left: 2rem; }
+    li { margin: 0.5rem 0; }
+    .rps { font-weight: 600; color: var(--accent-blue); }
+    .improvement { color: var(--accent-green); }
+    .chart-container {
+      background: var(--panel-bg);
+      border: var(--panel-border);
+      border-radius: var(--panel-radius);
+      padding: var(--panel-padding);
+      margin: 2rem 0;
+    }
+    .chart-container h4 { margin: 0 0 1rem; color: var(--text-primary); }
+    [data-style="editorial"] .chart-container { border-bottom: 1px solid var(--border-color); padding-bottom: 2rem; margin-bottom: 2rem; }
+    [data-style="editorial"] .chart-container h4 { font-family: var(--heading-font); font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-secondary); margin-bottom: 1.5rem; }
+    .git-visualization { background: var(--panel-bg); border: var(--panel-border); border-radius: var(--panel-radius); padding: var(--panel-padding); margin: 2rem 0; }
+    [data-style="editorial"] .git-visualization { border-left: 3px solid var(--accent-blue); padding-left: 1.5rem; }
+    .branch-label { display: inline-block; background: var(--accent-green); color: var(--bg-primary); padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.85rem; font-weight: 600; margin-bottom: 1rem; }
+    .commits { position: relative; padding-left: 2rem; }
+    .commits::before { content: ''; position: absolute; left: 0.5rem; top: 0; bottom: 0; width: 2px; background: var(--accent-green); }
+    .git-commit { position: relative; display: flex; align-items: flex-start; margin-bottom: 1rem; padding: 0.5rem 0; }
+    .git-commit .node { position: absolute; left: -1.65rem; width: 12px; height: 12px; background: var(--accent-green); border-radius: 50%; border: 2px solid var(--bg-secondary); }
+    .git-commit .node.final { width: 16px; height: 16px; left: -1.75rem; background: linear-gradient(135deg, var(--accent-green), var(--accent-blue)); box-shadow: 0 0 10px rgba(63, 185, 80, 0.5); }
+    .commit-info { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+    .commit-info .tag { background: var(--bg-tertiary); color: var(--accent-blue); padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.8rem; }
+    .commit-info .message { color: var(--text-primary); }
+    .commit-info .improvement { color: var(--accent-green); font-weight: 600; }
+    .table-container { background: var(--panel-bg); border: var(--panel-border); border-radius: var(--panel-radius); padding: var(--panel-padding); margin: 2rem 0; overflow-x: auto; }
+    .table-container h4 { margin: 0 0 1rem; }
+    [data-style="editorial"] .table-container { padding: 0; }
+    [data-style="editorial"] .table-container h4 { font-family: var(--heading-font); font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-secondary); padding-bottom: 0.5rem; border-bottom: 1px solid var(--border-color); }
+    .generated-footer { margin-top: 4rem; padding-top: 2rem; border-top: 1px solid var(--border-color); text-align: center; color: var(--text-secondary); font-size: 0.9rem; }
+    .c4-diagram, .mermaid-diagram { background: var(--panel-bg); border: var(--panel-border); border-radius: var(--panel-radius); padding: var(--panel-padding); margin: 2rem 0; overflow: visible; }
+    .c4-diagram h4, .mermaid-diagram h4 { margin: 0 0 1rem; color: var(--text-primary); }
+    .c4-diagram .mermaid, .mermaid-diagram .mermaid { background: transparent; min-height: 400px; }
+    .c4-diagram svg, .mermaid-diagram svg { max-width: 100%; height: auto !important; overflow: visible; }
+    .c4-diagram .relation { stroke-width: 1.5px; }
+    .c4-diagram .messageText { font-size: 12px; fill: var(--text-secondary); }
+    .c4-diagram .boundary { overflow: visible; }
+    .mermaid-diagram .node rect, .mermaid-diagram .node polygon { fill: #438dd5 !important; stroke: #1168bd !important; }
+    .mermaid-diagram .node .label { color: #fff !important; }
+    .mermaid-diagram .cluster rect { fill: transparent !important; stroke: #444 !important; stroke-dasharray: 5,5; }
+    .mermaid-diagram .cluster span { color: var(--text-primary) !important; }
+    .mermaid-diagram .edgePath path { stroke: #666 !important; }
+    .mermaid-diagram .edgeLabel { background: var(--panel-bg) !important; }
+    [data-theme="light"] .mermaid-diagram .node rect, [data-theme="light"] .mermaid-diagram .node polygon { fill: #438dd5 !important; stroke: #1168bd !important; }
+    [data-theme="light"] .mermaid-diagram .cluster rect { stroke: #999 !important; }
+    .controls { position: fixed; top: 1.5rem; right: 1.5rem; display: flex; gap: 0.75rem; z-index: 1000; }
+    .control-btn { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--border-color); background: var(--bg-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.3s ease; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); }
+    .control-btn:hover { transform: scale(1.1); border-color: var(--accent-blue); }
+    .control-btn svg { width: 20px; height: 20px; fill: var(--text-primary); }
+    .theme-toggle .sun-icon { display: none; }
+    .theme-toggle .moon-icon { display: block; }
+    [data-theme="light"] .theme-toggle .sun-icon { display: block; }
+    [data-theme="light"] .theme-toggle .moon-icon { display: none; }
+    .style-toggle { font-family: var(--heading-font); font-size: 11px; font-weight: 700; }
+    .style-toggle .style-label { color: var(--text-primary); }
+    @media (max-width: 768px) { body { padding: 1rem; } h1 { font-size: 1.8rem; } }
+  </style>
+</head>
+<body>
+  <div class="controls">
+    <button class="control-btn style-toggle" onclick="cycleStyle()" title="Switch style"><span class="style-label">Aa</span></button>
+    <button class="control-btn theme-toggle" onclick="toggleTheme()" title="Toggle theme">
+      <svg class="sun-icon" viewBox="0 0 24 24"><path d="M12 17.5a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11zm0 1.5a7 7 0 1 1 0-14 7 7 0 0 1 0 14zm0-17a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0v-1.5A.75.75 0 0 1 12 2z"/></svg>
+      <svg class="moon-icon" viewBox="0 0 24 24"><path d="M9.37 5.51A7.35 7.35 0 0 0 9.1 7.5c0 4.08 3.32 7.4 7.4 7.4.68 0 1.35-.09 1.99-.27A7.014 7.014 0 0 1 12 19c-3.86 0-7-3.14-7-7 0-2.93 1.81-5.45 4.37-6.49z"/></svg>
+    </button>
+  </div>
+  <h1><a href="#kraft-dsl-type-safe-http-routing" id="kraft-dsl-type-safe-http-routing" class="anchor"></a>Kraft DSL: Type-Safe HTTP Routing</h1>
+<p><em>An http4s-inspired DSL for building type-safe, expressive HTTP routes.</em></p>
+<hr />
+<h2><a href="#introduction" id="introduction" class="anchor"></a>Introduction</h2>
+<p>The Kraft DSL is a standalone routing library that provides type-safe HTTP request handling. Inspired by <a href="https://http4s.org">http4s</a>, it brings the best of functional programming to HTTP routing while remaining server-agnostic.</p>
+<h3><a href="#key-features" id="key-features" class="anchor"></a>Key Features</h3>
+<ul>
+<li><strong>Type-safe parameter extraction</strong> — Query params, headers, and bodies arrive already typed</li>
+<li><strong>Compile-time safety</strong> — Invalid routes fail at compile time, not runtime</li>
+<li><strong>Server-agnostic</strong> — Works with any HTTP backend (Netty, Jetty, etc.)</li>
+<li><strong>Testable</strong> — Test routes without starting a server using <code>TestClient</code></li>
+<li><strong>Composable</strong> — Combine route sets with the <code>&lt;+&gt;</code> operator</li>
+<li><strong>Zero runtime overhead</strong> — No reflection, no runtime type checking</li>
+</ul>
+<h3><a href="#quick-example" id="quick-example" class="anchor"></a>Quick Example</h3>
+<pre><code class="language-scala">import kraft.dsl.*
+
+val routes = HttpRoutes(
+  // Simple route
+  GET(&quot;/health&quot;) { _ =&gt; Ok(&quot;&quot;&quot;{&quot;status&quot;:&quot;ok&quot;}&quot;&quot;&quot;) },
+
+  // With typed query params - params arrive already parsed!
+  (GET / &quot;search&quot;) ? param[LocalDateTime](&quot;starts_at&quot;) &amp; param[LocalDateTime](&quot;ends_at&quot;) {
+    (startsAt, endsAt) =&gt; Ok(search(startsAt, endsAt))
+  },
+
+  // With JSON body
+  (POST / &quot;events&quot;) &gt; body[CreateEvent] { event =&gt;
+    CreatedJson(event)
+  }
+)
+</code></pre>
+<hr />
+<h2><a href="#chapter-1-getting-started" id="chapter-1-getting-started" class="anchor"></a>Chapter 1: Getting Started</h2>
+<h3><a href="#installation" id="installation" class="anchor"></a>Installation</h3>
+<p>The DSL is part of the Kraft server library. Import it with:</p>
+<pre><code class="language-scala">import kraft.dsl.*
+</code></pre>
+<p>For backwards compatibility with older code:</p>
+<pre><code class="language-scala">import kraft.server.dsl.*  // Re-exports everything from kraft.dsl
+</code></pre>
+<h3><a href="#your-first-route" id="your-first-route" class="anchor"></a>Your First Route</h3>
+<p>The simplest route handles a request and returns a response:</p>
+<pre><code class="language-scala">val routes = HttpRoutes(
+  GET(&quot;/health&quot;) { req =&gt;
+    Ok(&quot;&quot;&quot;{&quot;status&quot;:&quot;healthy&quot;}&quot;&quot;&quot;)
+  }
+)
+</code></pre>
+<p>Breaking this down:</p>
+<ul>
+<li><code>GET(&quot;/health&quot;)</code> — Matches GET requests to <code>/health</code></li>
+<li><code>{ req =&gt; ... }</code> — Handler function receives the request</li>
+<li><code>Ok(...)</code> — Returns HTTP 200 with JSON body</li>
+</ul>
+<h3><a href="#running-routes" id="running-routes" class="anchor"></a>Running Routes</h3>
+<p>Routes are server-agnostic. Connect them to any HTTP server:</p>
+<pre><code class="language-scala">// With Kraft's Netty server
+HttpServer(routes).start(8080)
+
+// Or test them directly
+val client = TestClient(routes)
+val response = client.get(&quot;/health&quot;)
+assert(response.status == Status.Ok)
+</code></pre>
+<hr />
+<h2><a href="#chapter-2-simple-routes" id="chapter-2-simple-routes" class="anchor"></a>Chapter 2: Simple Routes</h2>
+<p>For routes that need full request access:</p>
+<pre><code class="language-scala">// Health check
+GET(&quot;/health&quot;) { req =&gt;
+  Ok(&quot;&quot;&quot;{&quot;status&quot;:&quot;healthy&quot;}&quot;&quot;&quot;)
+}
+
+// Using request details
+GET(&quot;/echo&quot;) { req =&gt;
+  val userAgent = req.headers.userAgent.getOrElse(&quot;unknown&quot;)
+  val host = req.headers.host.getOrElse(&quot;localhost&quot;)
+  Ok(s&quot;&quot;&quot;{&quot;userAgent&quot;:&quot;$userAgent&quot;,&quot;host&quot;:&quot;$host&quot;}&quot;&quot;&quot;)
+}
+
+// POST with JSON body parsing
+POST(&quot;/events&quot;) { req =&gt;
+  req.as[CreateEvent] match
+    case Right(event) =&gt; CreatedJson(event)
+    case Left(err) =&gt; BadRequest(err)
+}
+
+// Access all query parameters
+GET(&quot;/debug&quot;) { req =&gt;
+  val allParams = req.params.all
+  Ok(s&quot;&quot;&quot;{&quot;params&quot;:${allParams.size}}&quot;&quot;&quot;)
+}
+</code></pre>
+<h3><a href="#available-http-methods" id="available-http-methods" class="anchor"></a>Available HTTP Methods</h3>
+<pre><code class="language-scala">GET(&quot;/path&quot;) { req =&gt; ... }
+POST(&quot;/path&quot;) { req =&gt; ... }
+PUT(&quot;/path&quot;) { req =&gt; ... }
+DELETE(&quot;/path&quot;) { req =&gt; ... }
+PATCH(&quot;/path&quot;) { req =&gt; ... }
+HEAD(&quot;/path&quot;) { req =&gt; ... }
+OPTIONS(&quot;/path&quot;) { req =&gt; ... }
+</code></pre>
+<hr />
+<h2><a href="#chapter-3-typed-query-parameters" id="chapter-3-typed-query-parameters" class="anchor"></a>Chapter 3: Typed Query Parameters</h2>
+<p>The DSL's killer feature: parameters arrive as <code>Option[T]</code>, already parsed. Invalid values become <code>None</code>.</p>
+<h3><a href="#single-parameter" id="single-parameter" class="anchor"></a>Single Parameter</h3>
+<pre><code class="language-scala">// Single optional parameter
+(GET / &quot;users&quot;) ? param[Int](&quot;page&quot;) { page =&gt;
+  // page: Option[Int]
+  val pageNum = page.getOrElse(1)
+  Ok(listUsers(pageNum))
+}
+</code></pre>
+<h3><a href="#multiple-parameters" id="multiple-parameters" class="anchor"></a>Multiple Parameters</h3>
+<pre><code class="language-scala">// Two parameters
+(GET / &quot;search&quot;) ? param[LocalDateTime](&quot;starts_at&quot;) &amp; param[LocalDateTime](&quot;ends_at&quot;) {
+  (startsAt, endsAt) =&gt;
+    // startsAt: Option[LocalDateTime]
+    // endsAt: Option[LocalDateTime]
+    Ok(search(startsAt, endsAt))
+}
+
+// Three parameters
+(GET / &quot;filter&quot;) ? param[String](&quot;category&quot;) &amp; param[Int](&quot;limit&quot;) &amp; param[Int](&quot;offset&quot;) {
+  (category, limit, offset) =&gt;
+    val cat = category.getOrElse(&quot;all&quot;)
+    val lim = limit.getOrElse(20)
+    val off = offset.getOrElse(0)
+    Ok(filter(cat, lim, off))
+}
+</code></pre>
+<h3><a href="#required-parameters" id="required-parameters" class="anchor"></a>Required Parameters</h3>
+<p>Use <code>?!</code> and <code>&amp;!</code> for required parameters. Returns 400 if missing:</p>
+<pre><code class="language-scala">// Required parameter - returns 400 if missing
+(GET / &quot;user&quot;) ?! param[Long](&quot;id&quot;) { id =&gt;
+  // id: Long (not Option!)
+  Ok(getUser(id))
+}
+
+// Two required parameters
+(GET / &quot;range&quot;) ?! param[Int](&quot;from&quot;) &amp;! param[Int](&quot;to&quot;) { (from, to) =&gt;
+  // Both are required - 400 if either missing
+  Ok(getRange(from, to))
+}
+</code></pre>
+<h3><a href="#built-in-parameter-types" id="built-in-parameter-types" class="anchor"></a>Built-in Parameter Types</h3>
+<p>The following types work out of the box:</p>
+<table>
+<thead>
+<tr><th>Type</th><th>Example Input</th><th>Parsed As</th></tr>
+</thead>
+<tbody>
+<tr><td><code>String</code></td><td><code>name=Alice</code></td><td><code>Some(&quot;Alice&quot;)</code></td></tr>
+<tr><td><code>Int</code></td><td><code>page=5</code></td><td><code>Some(5)</code></td></tr>
+<tr><td><code>Long</code></td><td><code>id=123456789</code></td><td><code>Some(123456789L)</code></td></tr>
+<tr><td><code>Double</code></td><td><code>price=19.99</code></td><td><code>Some(19.99)</code></td></tr>
+<tr><td><code>Boolean</code></td><td><code>active=true</code></td><td><code>Some(true)</code></td></tr>
+<tr><td><code>LocalDate</code></td><td><code>date=2024-01-15</code></td><td><code>Some(LocalDate)</code></td></tr>
+<tr><td><code>LocalDateTime</code></td><td><code>ts=2024-01-15T10:30:00</code></td><td><code>Some(LocalDateTime)</code></td></tr>
+</tbody>
+</table>
+<h3><a href="#with-request-access" id="with-request-access" class="anchor"></a>With Request Access</h3>
+<p>Use <code>withRequest</code> when you need both typed params and the full request:</p>
+<pre><code class="language-scala">(GET / &quot;search&quot;) ? param[LocalDateTime](&quot;starts_at&quot;) &amp; param[LocalDateTime](&quot;ends_at&quot;) withRequest {
+  (startsAt, endsAt, req) =&gt;
+    // Validate: if raw param exists but parsed is None, it was invalid
+    if req.params.has(&quot;starts_at&quot;) &amp;&amp; startsAt.isEmpty then
+      BadRequest(&quot;Invalid starts_at format&quot;)
+    else if req.params.has(&quot;ends_at&quot;) &amp;&amp; endsAt.isEmpty then
+      BadRequest(&quot;Invalid ends_at format&quot;)
+    else
+      Ok(search(startsAt, endsAt))
+}
+</code></pre>
+<hr />
+<h2><a href="#chapter-4-typed-headers" id="chapter-4-typed-headers" class="anchor"></a>Chapter 4: Typed Headers</h2>
+<p>Headers work the same way as parameters:</p>
+<pre><code class="language-scala">// Single header
+(GET / &quot;api/protected&quot;) ?&gt; header[String](&quot;Authorization&quot;) { auth =&gt;
+  auth match
+    case Some(token) if token.startsWith(&quot;Bearer &quot;) =&gt;
+      val jwt = token.stripPrefix(&quot;Bearer &quot;)
+      Ok(protectedData(jwt))
+    case Some(_) =&gt; BadRequest(&quot;Invalid authorization format&quot;)
+    case None =&gt; Unauthorized(&quot;Missing authorization header&quot;)
+}
+
+// Multiple headers
+(GET / &quot;api/trace&quot;) ?&gt; header[String](&quot;Authorization&quot;) &amp;&gt; header[String](&quot;X-Request-Id&quot;) {
+  (auth, requestId) =&gt;
+    val reqId = requestId.getOrElse(java.util.UUID.randomUUID.toString)
+    Ok(tracedResponse(auth, reqId))
+}
+</code></pre>
+<h3><a href="#common-header-shortcuts" id="common-header-shortcuts" class="anchor"></a>Common Header Shortcuts</h3>
+<pre><code class="language-scala">GET(&quot;/info&quot;) { req =&gt;
+  val ct = req.headers.contentType      // Option[String]
+  val ua = req.headers.userAgent        // Option[String]
+  val auth = req.headers.authorization  // Option[String]
+  val host = req.headers.host           // Option[String]
+  val accept = req.headers.accept       // Option[String]
+  Ok(&quot;...&quot;)
+}
+</code></pre>
+<hr />
+<h2><a href="#chapter-5-typed-body-decoding" id="chapter-5-typed-body-decoding" class="anchor"></a>Chapter 5: Typed Body Decoding</h2>
+<p>For POST/PUT with JSON bodies, use the <code>&gt;</code> operator:</p>
+<pre><code class="language-scala">// Simple body decoding
+(POST / &quot;events&quot;) &gt; body[CreateEvent] { event =&gt;
+  // event: CreateEvent (already decoded from JSON)
+  val saved = repository.save(event)
+  CreatedJson(saved)
+}
+
+// Body with request access
+(POST / &quot;events&quot;) &gt; body[CreateEvent] withRequest { (event, req) =&gt;
+  val userId = req.headers.get(&quot;X-User-Id&quot;)
+  val saved = repository.save(event, userId)
+  CreatedJson(saved)
+}
+</code></pre>
+<h3><a href="#json-codec-integration" id="json-codec-integration" class="anchor"></a>JSON Codec Integration</h3>
+<p>The DSL uses a pluggable <code>JsonCodec</code> trait. For Jsoniter-scala:</p>
+<pre><code class="language-scala">import kraft.dsl.*
+import kraft.dsl.json.jsoniter.given
+import com.github.plokhotnyuk.jsoniter_scala.core.*
+import com.github.plokhotnyuk.jsoniter_scala.macros.*
+
+case class Event(id: String, name: String)
+given JsonValueCodec[Event] = JsonCodecMaker.make
+
+// Now you can use OkJson and CreatedJson
+(POST / &quot;events&quot;) &gt; body[Event] { event =&gt;
+  CreatedJson(event)  // Automatically serializes to JSON
+}
+</code></pre>
+<hr />
+<h2><a href="#chapter-6-combined-extraction" id="chapter-6-combined-extraction" class="anchor"></a>Chapter 6: Combined Extraction</h2>
+<p>Mix parameters, headers, and body in any combination:</p>
+<pre><code class="language-scala">// Params + Headers
+(GET / &quot;data&quot;) ? param[Int](&quot;page&quot;) &amp;&gt; header[String](&quot;Authorization&quot;) {
+  (page, auth) =&gt;
+    auth match
+      case Some(token) =&gt; Ok(getData(page.getOrElse(1), token))
+      case None =&gt; Unauthorized(&quot;Token required&quot;)
+}
+
+// Two params + header
+(GET / &quot;search&quot;) ? param[String](&quot;q&quot;) &amp; param[Int](&quot;limit&quot;) &amp;&gt; header[String](&quot;X-Api-Key&quot;) {
+  (query, limit, apiKey) =&gt;
+    apiKey match
+      case Some(key) if isValidKey(key) =&gt;
+        Ok(search(query.getOrElse(&quot;&quot;), limit.getOrElse(10)))
+      case _ =&gt; Forbidden(&quot;Invalid API key&quot;)
+}
+
+// Header + params (order matters for the operator)
+(GET / &quot;api&quot;) ?&gt; header[String](&quot;Authorization&quot;) &amp; param[Int](&quot;page&quot;) {
+  (auth, page) =&gt; Ok(apiData(auth, page))
+}
+</code></pre>
+<hr />
+<h2><a href="#chapter-7-path-variables" id="chapter-7-path-variables" class="anchor"></a>Chapter 7: Path Variables</h2>
+<p>Extract values from URL paths using pattern matching:</p>
+<pre><code class="language-scala">// Using pattern matching style
+HttpRoutes.of {
+  case req @ GET -&gt; Root / &quot;users&quot; / IntVar(id) =&gt;
+    Ok(getUser(id))
+
+  case req @ GET -&gt; Root / &quot;posts&quot; / LongVar(postId) / &quot;comments&quot; / IntVar(commentId) =&gt;
+    Ok(getComment(postId, commentId))
+
+  case req @ GET -&gt; Root / &quot;files&quot; / UUIDVar(fileId) =&gt;
+    Ok(getFile(fileId))
+}
+</code></pre>
+<h3><a href="#available-path-extractors" id="available-path-extractors" class="anchor"></a>Available Path Extractors</h3>
+<table>
+<thead>
+<tr><th>Extractor</th><th>Type</th><th>Example Match</th></tr>
+</thead>
+<tbody>
+<tr><td><code>IntVar(id)</code></td><td><code>Int</code></td><td><code>/users/42</code> → <code>42</code></td></tr>
+<tr><td><code>LongVar(id)</code></td><td><code>Long</code></td><td><code>/posts/123456789</code> → <code>123456789L</code></td></tr>
+<tr><td><code>UUIDVar(id)</code></td><td><code>java.util.UUID</code></td><td><code>/files/550e8400-e29b-...</code></td></tr>
+<tr><td><code>StringVar(&quot;name&quot;)</code></td><td><code>String</code></td><td><code>/users/alice</code> → <code>&quot;alice&quot;</code></td></tr>
+</tbody>
+</table>
+<h3><a href="#named-path-parameters" id="named-path-parameters" class="anchor"></a>Named Path Parameters</h3>
+<p>You can also use named path parameters:</p>
+<pre><code class="language-scala">val routes = HttpRoutes(
+  GET(Root / &quot;users&quot; / StringVar(&quot;id&quot;) / &quot;posts&quot;) { req =&gt;
+    val userId = req.pathParam(&quot;id&quot;).getOrElse(&quot;unknown&quot;)
+    Ok(s&quot;&quot;&quot;{&quot;userId&quot;:&quot;$userId&quot;}&quot;&quot;&quot;)
+  }
+)
+</code></pre>
+<hr />
+<h2><a href="#chapter-8-response-builders" id="chapter-8-response-builders" class="anchor"></a>Chapter 8: Response Builders</h2>
+<p>The DSL provides response builders for common HTTP status codes.</p>
+<h3><a href="#success-responses" id="success-responses" class="anchor"></a>Success Responses</h3>
+<pre><code class="language-scala">Ok(&quot;body&quot;)                        // 200 with JSON
+Ok(&quot;body&quot;, &quot;text/plain&quot;)          // 200 with custom content type
+OkJson(myObject)                  // 200 with auto-serialized JSON
+OkText(&quot;plain text&quot;)              // 200 with text/plain
+OkHtml(&quot;&lt;html&gt;...&lt;/html&gt;&quot;)        // 200 with text/html
+OkXml(&quot;&lt;root&gt;...&lt;/root&gt;&quot;)         // 200 with application/xml
+OkCsv(&quot;a,b,c&quot;)                    // 200 with text/csv
+OkBytes(bytes, &quot;image/png&quot;)       // 200 with binary data
+
+Created(&quot;body&quot;)                   // 201 Created
+CreatedJson(myObject)             // 201 with auto-serialized JSON
+NoContent                         // 204 No Content
+</code></pre>
+<h3><a href="#error-responses" id="error-responses" class="anchor"></a>Error Responses</h3>
+<pre><code class="language-scala">BadRequest(&quot;error message&quot;)       // 400 Bad Request
+Unauthorized(&quot;not logged in&quot;)     // 401 Unauthorized
+Forbidden(&quot;access denied&quot;)        // 403 Forbidden
+NotFound                          // 404 Not Found
+MethodNotAllowed(&quot;GET, POST&quot;)     // 405 Method Not Allowed
+InternalServerError(&quot;oops&quot;)       // 500 Internal Server Error
+ServiceUnavailable(&quot;maintenance&quot;) // 503 Service Unavailable
+</code></pre>
+<h3><a href="#custom-response" id="custom-response" class="anchor"></a>Custom Response</h3>
+<pre><code class="language-scala">respond(Status.Ok, myData, &quot;application/x-custom&quot;)
+respond(Status.Created, body, ContentType.Json)
+</code></pre>
+<h3><a href="#content-type-constants" id="content-type-constants" class="anchor"></a>Content Type Constants</h3>
+<pre><code class="language-scala">import kraft.dsl.ContentType
+
+ContentType.Json           // &quot;application/json&quot;
+ContentType.Xml            // &quot;application/xml&quot;
+ContentType.Html           // &quot;text/html&quot;
+ContentType.Plain          // &quot;text/plain&quot;
+ContentType.Csv            // &quot;text/csv&quot;
+ContentType.Protobuf       // &quot;application/x-protobuf&quot;
+ContentType.OctetStream    // &quot;application/octet-stream&quot;
+ContentType.FormUrlEncoded // &quot;application/x-www-form-urlencoded&quot;
+</code></pre>
+<hr />
+<h2><a href="#chapter-9-route-composition" id="chapter-9-route-composition" class="anchor"></a>Chapter 9: Route Composition</h2>
+<p>Combine route sets with the <code>&lt;+&gt;</code> operator:</p>
+<pre><code class="language-scala">// Feature-based organization
+object HealthRoutes:
+  val routes = HttpRoutes(
+    GET(&quot;/health&quot;) { _ =&gt; Ok(&quot;&quot;&quot;{&quot;status&quot;:&quot;ok&quot;}&quot;&quot;&quot;) },
+    GET(&quot;/ready&quot;) { _ =&gt; Ok(&quot;&quot;&quot;{&quot;ready&quot;:true}&quot;&quot;&quot;) }
+  )
+
+object SearchRoutes:
+  def routes(repo: EventRepository) = HttpRoutes(
+    (GET / &quot;search&quot;) ? param[String](&quot;q&quot;) { q =&gt;
+      Ok(repo.search(q.getOrElse(&quot;&quot;)))
+    }
+  )
+
+object MetricsRoutes:
+  def routes(metrics: Metrics) = HttpRoutes(
+    GET(&quot;/metrics&quot;) { _ =&gt; OkText(metrics.toPrometheus) }
+  )
+
+// Compose them all
+val allRoutes =
+  HealthRoutes.routes &lt;+&gt;
+  SearchRoutes.routes(eventRepo) &lt;+&gt;
+  MetricsRoutes.routes(metrics)
+</code></pre>
+<h3><a href="#combining-with-varargs" id="combining-with-varargs" class="anchor"></a>Combining with Varargs</h3>
+<pre><code class="language-scala">val combined = HttpRoutes(
+  GET(&quot;/a&quot;) { _ =&gt; Ok(&quot;a&quot;) },
+  GET(&quot;/b&quot;) { _ =&gt; Ok(&quot;b&quot;) },
+  GET(&quot;/c&quot;) { _ =&gt; Ok(&quot;c&quot;) }
+)
+</code></pre>
+<hr />
+<h2><a href="#chapter-10-custom-type-decoders" id="chapter-10-custom-type-decoders" class="anchor"></a>Chapter 10: Custom Type Decoders</h2>
+<p>The DSL uses <code>QueryDecoder[T]</code> for parsing. Add custom decoders with a simple <code>given</code>:</p>
+<pre><code class="language-scala">// Custom ID type
+case class UserId(value: Long)
+
+given QueryDecoder[UserId] with
+  def decode(s: String): Option[UserId] =
+    s.toLongOption.map(UserId(_))
+
+// Now use it in routes
+(GET / &quot;users&quot;) ? param[UserId](&quot;id&quot;) { userId =&gt;
+  userId match
+    case Some(id) =&gt; Ok(getUser(id))
+    case None =&gt; BadRequest(&quot;Invalid user ID&quot;)
+}
+</code></pre>
+<h3><a href="#custom-enum" id="custom-enum" class="anchor"></a>Custom Enum</h3>
+<pre><code class="language-scala">enum Status:
+  case Active, Inactive, Pending
+
+given QueryDecoder[Status] with
+  def decode(s: String): Option[Status] =
+    s.toLowerCase match
+      case &quot;active&quot; =&gt; Some(Status.Active)
+      case &quot;inactive&quot; =&gt; Some(Status.Inactive)
+      case &quot;pending&quot; =&gt; Some(Status.Pending)
+      case _ =&gt; None
+
+(GET / &quot;users&quot;) ? param[Status](&quot;status&quot;) { status =&gt;
+  Ok(filterByStatus(status.getOrElse(Status.Active)))
+}
+</code></pre>
+<h3><a href="#custom-date-format" id="custom-date-format" class="anchor"></a>Custom Date Format</h3>
+<pre><code class="language-scala">import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+import scala.util.Try
+
+given QueryDecoder[LocalDateTime] with
+  def decode(s: String): Option[LocalDateTime] =
+    // Handle RFC3339 with timezone
+    Try(LocalDateTime.parse(s, DateTimeFormatter.ISO_DATE_TIME)).toOption
+      .orElse(Try(LocalDateTime.parse(s.replace(&quot;Z&quot;, &quot;&quot;))).toOption)
+</code></pre>
+<hr />
+<h2><a href="#chapter-11-testing-routes" id="chapter-11-testing-routes" class="anchor"></a>Chapter 11: Testing Routes</h2>
+<p>The DSL includes <code>TestClient</code> for unit testing routes without starting a server:</p>
+<pre><code class="language-scala">import kraft.dsl.testing.{TestClient, RequestBuilder}
+import org.scalatest.funsuite.AnyFunSuite
+import org.scalatest.matchers.should.Matchers
+
+class MyRoutesSpec extends AnyFunSuite with Matchers:
+
+  test(&quot;health endpoint returns ok&quot;):
+    val routes = HttpRoutes(
+      GET(&quot;/health&quot;) { _ =&gt; Ok(&quot;&quot;&quot;{&quot;status&quot;:&quot;healthy&quot;}&quot;&quot;&quot;) }
+    )
+
+    val client = TestClient(routes)
+    val response = client.get(&quot;/health&quot;)
+
+    response.status shouldBe Status.Ok
+    response.bodyText shouldBe &quot;&quot;&quot;{&quot;status&quot;:&quot;healthy&quot;}&quot;&quot;&quot;
+
+  test(&quot;search with query params&quot;):
+    val routes = HttpRoutes(
+      (GET / &quot;search&quot;) ? param[Int](&quot;page&quot;) { page =&gt;
+        Ok(s&quot;&quot;&quot;{&quot;page&quot;:${page.getOrElse(1)}}&quot;&quot;&quot;)
+      }
+    )
+
+    val client = TestClient(routes)
+
+    client.get(&quot;/search&quot;).bodyText shouldBe &quot;&quot;&quot;{&quot;page&quot;:1}&quot;&quot;&quot;
+    client.get(&quot;/search?page=5&quot;).bodyText shouldBe &quot;&quot;&quot;{&quot;page&quot;:5}&quot;&quot;&quot;
+
+  test(&quot;POST with body&quot;):
+    val routes = HttpRoutes(
+      POST(&quot;/echo&quot;) { req =&gt; Ok(req.bodyText) }
+    )
+
+    val client = TestClient(routes)
+    val response = client.post(&quot;/echo&quot;, &quot;Hello!&quot;)
+
+    response.bodyText shouldBe &quot;Hello!&quot;
+
+  test(&quot;custom headers&quot;):
+    val routes = HttpRoutes(
+      GET(&quot;/whoami&quot;) { req =&gt;
+        val ua = req.headers.userAgent.getOrElse(&quot;unknown&quot;)
+        Ok(s&quot;&quot;&quot;{&quot;agent&quot;:&quot;$ua&quot;}&quot;&quot;&quot;)
+      }
+    )
+
+    val client = TestClient(routes)
+    val response = client.get(&quot;/whoami&quot;, Map(&quot;User-Agent&quot; -&gt; &quot;TestBot/1.0&quot;))
+
+    response.bodyText should include(&quot;TestBot/1.0&quot;)
+</code></pre>
+<h3><a href="#testclient-methods" id="testclient-methods" class="anchor"></a>TestClient Methods</h3>
+<pre><code class="language-scala">val client = TestClient(routes)
+
+// GET requests
+client.get(&quot;/path&quot;)
+client.get(&quot;/path&quot;, headers = Map(&quot;Authorization&quot; -&gt; &quot;Bearer token&quot;))
+
+// POST requests
+client.post(&quot;/path&quot;, &quot;body content&quot;)
+client.post(&quot;/path&quot;, &quot;body&quot;, headers = Map(&quot;Content-Type&quot; -&gt; &quot;text/plain&quot;))
+
+// Response helpers
+response.status          // Status enum
+response.bodyText        // Body as String
+response.body            // Body as Array[Byte]
+response.headers         // Map of headers
+response.isSuccess       // true if 2xx
+response.isClientError   // true if 4xx
+response.isServerError   // true if 5xx
+</code></pre>
+<hr />
+<h2><a href="#chapter-12-real-world-example" id="chapter-12-real-world-example" class="anchor"></a>Chapter 12: Real-World Example</h2>
+<p>Here's how the search feature uses the DSL:</p>
+<pre><code class="language-scala">package kraft.features.search
+
+import kraft.dsl.*
+import java.time.LocalDateTime
+import java.util.concurrent.atomic.{AtomicReference, AtomicLong}
+
+object Search:
+  // Custom decoder for our date format
+  given QueryDecoder[LocalDateTime] with
+    def decode(s: String): Option[LocalDateTime] =
+      parseRFC3339(s)
+
+  def routes(repo: EventRepository): HttpRoutes =
+    val service = Service(repo)
+    val cachedVersion = AtomicLong(0)
+    val cachedResponse = AtomicReference[Response](null)
+
+    HttpRoutes(
+      // Health endpoint - simple form
+      GET(&quot;/health&quot;) { _ =&gt;
+        Ok(&quot;&quot;&quot;{&quot;status&quot;:&quot;healthy&quot;}&quot;&quot;&quot;)
+      },
+
+      // Search endpoint with typed params and validation
+      (GET / &quot;search&quot;) ? param[LocalDateTime](&quot;starts_at&quot;) &amp; param[LocalDateTime](&quot;ends_at&quot;) withRequest {
+        (startsAt, endsAt, req) =&gt;
+          // Validate: if raw param exists but parsed is None, format was invalid
+          if req.params.has(&quot;starts_at&quot;) &amp;&amp; startsAt.isEmpty then
+            BadRequest(errorJson(&quot;starts_at must be a valid RFC3339 datetime&quot;))
+          else if req.params.has(&quot;ends_at&quot;) &amp;&amp; endsAt.isEmpty then
+            BadRequest(errorJson(&quot;ends_at must be a valid RFC3339 datetime&quot;))
+          else if startsAt.isEmpty &amp;&amp; endsAt.isEmpty then
+            // Fast path: use cached response
+            getCachedResponse(service, cachedVersion, cachedResponse)
+          else
+            // Filter by date range
+            OkJson(service.search(startsAt, endsAt))
+      }
+    )
+</code></pre>
+<hr />
+<h2><a href="#chapter-13-http-client-dsl" id="chapter-13-http-client-dsl" class="anchor"></a>Chapter 13: HTTP Client DSL</h2>
+<p>The DSL includes a type-safe HTTP client that mirrors the server-side routing patterns:</p>
+<pre><code class="language-scala">import kraft.dsl.client.*
+
+val client = HttpClient()
+
+// Simple GET request with typed response
+val response = client
+  .get(&quot;https://api.example.com/users/1&quot;)
+  .execute[User]
+
+// Pattern match on response
+response match
+  case ClientResponse.Ok(user) =&gt; println(s&quot;Got user: ${user.name}&quot;)
+  case ClientResponse.NotFound(_) =&gt; println(&quot;User not found&quot;)
+  case ClientResponse.ServerError(msg, _, _) =&gt; println(s&quot;Server error: $msg&quot;)
+</code></pre>
+<h3><a href="#creating-a-client" id="creating-a-client" class="anchor"></a>Creating a Client</h3>
+<pre><code class="language-scala">// Default client
+val client = HttpClient()
+
+// With custom timeout
+val client = HttpClient().timeoutSeconds(30)
+
+// With base URL
+val client = HttpClient.withBaseUrl(&quot;https://api.example.com&quot;)
+
+// With default headers
+val client = HttpClient()
+  .defaultHeader(&quot;User-Agent&quot;, &quot;MyApp/1.0&quot;)
+  .defaultHeader(&quot;Accept&quot;, &quot;application/json&quot;)
+</code></pre>
+<h3><a href="#making-requests" id="making-requests" class="anchor"></a>Making Requests</h3>
+<pre><code class="language-scala">// GET with query parameters
+val response = client
+  .get(&quot;https://api.example.com/users&quot;)
+  .param(&quot;page&quot;, 1)
+  .param(&quot;limit&quot;, 20)
+  .execute[List[User]]
+
+// Optional parameters
+val maybePage: Option[Int] = Some(5)
+client.get(&quot;/users&quot;).paramOpt(&quot;page&quot;, maybePage)
+
+// POST with JSON body
+val response = client
+  .post(&quot;https://api.example.com/users&quot;)
+  .body(CreateUser(&quot;Alice&quot;, &quot;alice@example.com&quot;))
+  .execute[User]
+
+// PUT, PATCH, DELETE
+client.put(&quot;/users/1&quot;).body(updateData).execute[User]
+client.patch(&quot;/users/1&quot;).body(partialUpdate).execute[User]
+client.delete(&quot;/users/1&quot;).executeNoContent
+
+// Raw string body
+client.post(&quot;/webhook&quot;)
+  .bodyString(xmlPayload, &quot;application/xml&quot;)
+  .executeString
+</code></pre>
+<h3><a href="#headers-and-authentication" id="headers-and-authentication" class="anchor"></a>Headers and Authentication</h3>
+<pre><code class="language-scala">// Custom headers
+val response = client
+  .get(&quot;/api/data&quot;)
+  .header(&quot;X-Api-Key&quot;, apiKey)
+  .header(&quot;X-Request-Id&quot;, requestId)
+  .execute[Data]
+
+// Bearer token authentication
+val response = client
+  .get(&quot;/api/protected&quot;)
+  .bearer(jwtToken)
+  .execute[ProtectedData]
+
+// Basic authentication
+val response = client
+  .get(&quot;/api/basic&quot;)
+  .basicAuth(&quot;username&quot;, &quot;password&quot;)
+  .execute[Data]
+</code></pre>
+<h3><a href="#response-handling" id="response-handling" class="anchor"></a>Response Handling</h3>
+<p>The <code>ClientResponse[A]</code> type provides pattern matching and functional operations:</p>
+<pre><code class="language-scala">// Pattern matching
+response match
+  case ClientResponse.Ok(data) =&gt; process(data)
+  case ClientResponse.Created(data) =&gt; created(data)
+  case ClientResponse.NoContent =&gt; success()
+  case ClientResponse.BadRequest(body) =&gt; handleBadRequest(body)
+  case ClientResponse.Unauthorized(body) =&gt; handleUnauth(body)
+  case ClientResponse.NotFound(body) =&gt; handleNotFound(body)
+  case ClientResponse.ServerError(body, status, _) =&gt; handleError(status, body)
+  case ClientResponse.ConnectionError(msg, _) =&gt; handleNetworkError(msg)
+
+// Functional operations
+val name: String = response
+  .map(_.name)
+  .getOrElse(&quot;Unknown&quot;)
+
+val result: Either[ClientResponse[Nothing], User] = response.toEither
+
+val maybeUser: Option[User] = response.toOption
+
+// Check status
+response.isSuccess     // true for 2xx
+response.isClientError // true for 4xx
+response.isServerError // true for 5xx
+</code></pre>
+<h3><a href="#response-types" id="response-types" class="anchor"></a>Response Types</h3>
+<table>
+<thead>
+<tr><th>Type</th><th>Status</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>Ok[A]</code></td><td>200</td><td>Successful response with body</td></tr>
+<tr><td><code>Created[A]</code></td><td>201</td><td>Resource created</td></tr>
+<tr><td><code>NoContent</code></td><td>204</td><td>Success, no body</td></tr>
+<tr><td><code>BadRequest</code></td><td>400</td><td>Client error</td></tr>
+<tr><td><code>Unauthorized</code></td><td>401</td><td>Authentication required</td></tr>
+<tr><td><code>Forbidden</code></td><td>403</td><td>Access denied</td></tr>
+<tr><td><code>NotFound</code></td><td>404</td><td>Resource not found</td></tr>
+<tr><td><code>ServerError</code></td><td>5xx</td><td>Server error</td></tr>
+<tr><td><code>ConnectionError</code></td><td>-1</td><td>Network/connection failure</td></tr>
+<tr><td><code>Other[A]</code></td><td>any</td><td>Other status codes</td></tr>
+</tbody>
+</table>
+<h3><a href="#real-world-example" id="real-world-example" class="anchor"></a>Real-World Example</h3>
+<pre><code class="language-scala">import kraft.dsl.client.*
+import com.github.plokhotnyuk.jsoniter_scala.core.*
+import com.github.plokhotnyuk.jsoniter_scala.macros.*
+
+case class Event(id: String, title: String, date: String)
+given JsonValueCodec[Event] = JsonCodecMaker.make
+given JsonValueCodec[List[Event]] = JsonCodecMaker.make
+
+class EventApiClient(baseUrl: String, apiKey: String):
+  private val client = HttpClient
+    .withBaseUrl(baseUrl)
+    .timeoutSeconds(30)
+    .defaultHeader(&quot;X-Api-Key&quot;, apiKey)
+
+  def getEvents(page: Int = 1): Either[String, List[Event]] =
+    client
+      .get(&quot;events&quot;)
+      .param(&quot;page&quot;, page)
+      .execute[List[Event]]
+      .toEither
+      .left.map(_.toString)
+
+  def getEvent(id: String): Option[Event] =
+    client
+      .get(s&quot;events/$id&quot;)
+      .execute[Event]
+      .toOption
+
+  def createEvent(title: String, date: String): Either[String, Event] =
+    client
+      .post(&quot;events&quot;)
+      .body(Event(&quot;&quot;, title, date))
+      .execute[Event]
+      .toEither
+      .left.map(_.toString)
+
+// Usage
+val api = EventApiClient(&quot;https://api.example.com&quot;, &quot;my-api-key&quot;)
+val events = api.getEvents(page = 1)
+</code></pre>
+<hr />
+<h2><a href="#chapter-14-websocket-dsl" id="chapter-14-websocket-dsl" class="anchor"></a>Chapter 14: WebSocket DSL</h2>
+<p>The DSL includes support for WebSocket connections, both client and server side.</p>
+<h3><a href="#client-side-websocket" id="client-side-websocket" class="anchor"></a>Client-Side WebSocket</h3>
+<p>Connect to WebSocket servers with type-safe message handling:</p>
+<pre><code class="language-scala">import kraft.dsl.ws.*
+
+// Create a WebSocket client
+val client = WebSocketClient.connect(&quot;wss://api.example.com/ws&quot;)
+  .onOpen {
+    println(&quot;Connected!&quot;)
+  }
+  .onMessage[ChatMessage] { msg =&gt;
+    println(s&quot;${msg.sender}: ${msg.text}&quot;)
+  }
+  .onClose { (code, reason) =&gt;
+    println(s&quot;Disconnected: $code - $reason&quot;)
+  }
+  .onError { ex =&gt;
+    println(s&quot;Error: ${ex.getMessage}&quot;)
+  }
+  .build()
+
+// Send messages
+client.send(&quot;Hello, World!&quot;)
+client.send(ChatMessage(&quot;Hi!&quot;, &quot;Alice&quot;))
+
+// Close when done
+client.close()
+</code></pre>
+<h3><a href="#message-types" id="message-types" class="anchor"></a>Message Types</h3>
+<pre><code class="language-scala">// Text message
+val textMsg = WsMessage.text(&quot;Hello&quot;)
+
+// Binary message
+val binaryMsg = WsMessage.binary(Array[Byte](1, 2, 3))
+
+// JSON message (auto-serialized)
+val jsonMsg = WsMessage.json(ChatMessage(&quot;Hi&quot;, &quot;Bob&quot;))
+</code></pre>
+<h3><a href="#server-side-websocket-routes" id="server-side-websocket-routes" class="anchor"></a>Server-Side WebSocket Routes</h3>
+<p>Define WebSocket handlers for your server:</p>
+<pre><code class="language-scala">import kraft.dsl.ws.*
+
+val wsRoutes = WebSocketRoutes(
+  WS(&quot;/chat&quot;)
+    .onOpen { println(&quot;Client connected&quot;) }
+    .onMessage[ChatMessage] { msg =&gt;
+      // Handle incoming messages
+      broadcast(msg)
+    }
+    .onClose { (code, reason) =&gt;
+      println(s&quot;Client disconnected: $code&quot;)
+    }
+    .build(),
+
+  WS(&quot;/notifications&quot;)
+    .onTextMessage { text =&gt;
+      println(s&quot;Notification: $text&quot;)
+    }
+    .build()
+)
+
+// Compose routes
+val allWsRoutes = wsRoutes &lt;+&gt; otherWsRoutes
+</code></pre>
+<h3><a href="#close-codes" id="close-codes" class="anchor"></a>Close Codes</h3>
+<p>Standard WebSocket close codes are available:</p>
+<pre><code class="language-scala">CloseCode.Normal         // 1000 - Normal closure
+CloseCode.GoingAway      // 1001 - Going away
+CloseCode.ProtocolError  // 1002 - Protocol error
+CloseCode.AbnormalClosure // 1006 - Abnormal closure
+</code></pre>
+<h3><a href="#type-safe-message-codecs" id="type-safe-message-codecs" class="anchor"></a>Type-Safe Message Codecs</h3>
+<p>The <code>WsCodec</code> typeclass handles encoding/decoding:</p>
+<pre><code class="language-scala">// Built-in codecs
+summon[WsCodec[String]]      // Text messages
+summon[WsCodec[Array[Byte]]] // Binary messages
+
+// JSON codec (automatic with JsonValueCodec)
+case class GameEvent(action: String, data: Map[String, Int])
+given JsonValueCodec[GameEvent] = JsonCodecMaker.make
+
+// Now GameEvent can be sent/received as JSON
+client.send(GameEvent(&quot;move&quot;, Map(&quot;x&quot; -&gt; 10, &quot;y&quot; -&gt; 20)))
+</code></pre>
+<hr />
+<h2><a href="#chapter-15-graphql-dsl" id="chapter-15-graphql-dsl" class="anchor"></a>Chapter 15: GraphQL DSL</h2>
+<p>The DSL includes a type-safe GraphQL schema definition and execution engine.</p>
+<h3><a href="#defining-a-schema" id="defining-a-schema" class="anchor"></a>Defining a Schema</h3>
+<pre><code class="language-scala">import kraft.dsl.graphql.*
+
+val schema = Schema(
+  Query(
+    field[String](&quot;hello&quot;, StringType)
+      .resolver(&quot;world&quot;)
+      .build(),
+
+    field[Option[User]](&quot;user&quot;, UserType)
+      .arg[String](&quot;id&quot;, IDType)
+      .resolve { ctx =&gt;
+        val id = ctx.argOrElse(&quot;id&quot;, &quot;&quot;)
+        userRepo.find(id)
+      }
+      .build(),
+
+    field[List[User]](&quot;users&quot;, ListType(UserType))
+      .resolver(userRepo.findAll())
+      .build()
+  ),
+  Mutation(
+    field[User](&quot;createUser&quot;, UserType)
+      .arg[String](&quot;name&quot;, StringType)
+      .arg[String](&quot;email&quot;, StringType)
+      .resolve { ctx =&gt;
+        userRepo.create(
+          ctx.requireArg(&quot;name&quot;),
+          ctx.requireArg(&quot;email&quot;)
+        )
+      }
+      .build()
+  )
+)
+</code></pre>
+<h3><a href="#graphql-types" id="graphql-types" class="anchor"></a>GraphQL Types</h3>
+<pre><code class="language-scala">// Scalar types
+StringType   // String
+IntType      // Int
+FloatType    // Float
+BooleanType  // Boolean
+IDType       // ID
+
+// List type
+ListType(UserType)        // [User]
+
+// Non-null type
+NonNull(StringType)       // String!
+
+// Nested types
+ListType(NonNull(IntType)) // [Int!]
+</code></pre>
+<h3><a href="#field-definitions" id="field-definitions" class="anchor"></a>Field Definitions</h3>
+<pre><code class="language-scala">// Simple field with static value
+field[String](&quot;greeting&quot;, StringType)
+  .resolver(&quot;Hello!&quot;)
+  .build()
+
+// Field with arguments
+field[User](&quot;user&quot;, UserType)
+  .arg[String](&quot;id&quot;, IDType)
+  .resolve { ctx =&gt;
+    userRepo.find(ctx.requireArg(&quot;id&quot;))
+  }
+  .build()
+
+// Field with description
+field[Int](&quot;count&quot;, IntType)
+  .description(&quot;Total number of items&quot;)
+  .resolver(items.size)
+  .build()
+</code></pre>
+<h3><a href="#resolver-context" id="resolver-context" class="anchor"></a>Resolver Context</h3>
+<p>The <code>ResolverContext</code> provides access to arguments and variables:</p>
+<pre><code class="language-scala">resolve { ctx =&gt;
+  // Get optional argument
+  val page = ctx.arg[Int](&quot;page&quot;)  // Option[Int]
+
+  // Get with default
+  val limit = ctx.argOrElse(&quot;limit&quot;, 10)
+
+  // Get required (throws if missing)
+  val id = ctx.requireArg[String](&quot;id&quot;)
+
+  // Access variables
+  val vars = ctx.variables
+}
+</code></pre>
+<h3><a href="#executing-queries" id="executing-queries" class="anchor"></a>Executing Queries</h3>
+<pre><code class="language-scala">// Execute a query string
+val result = schema.execute(&quot;&quot;&quot;
+  query {
+    user(id: &quot;123&quot;) {
+      name
+      email
+    }
+  }
+&quot;&quot;&quot;)
+
+// Check for errors
+result.errors match
+  case Some(error) =&gt; println(s&quot;Error: ${error.message}&quot;)
+  case None =&gt; println(s&quot;Data: ${result.data}&quot;)
+
+// Execute from JSON request
+val jsonRequest = &quot;&quot;&quot;{&quot;query&quot;: &quot;{ hello }&quot;}&quot;&quot;&quot;
+val jsonResponse = schema.executeJson(jsonRequest)
+</code></pre>
+<h3><a href="#generating-sdl" id="generating-sdl" class="anchor"></a>Generating SDL</h3>
+<p>Generate Schema Definition Language from your schema:</p>
+<pre><code class="language-scala">val sdl = schema.toSDL
+println(sdl)
+// Output:
+// type Query {
+//   hello: String
+//   user(id: ID): User
+//   users: [User]
+// }
+//
+// type Mutation {
+//   createUser(name: String, email: String): User
+// }
+</code></pre>
+<h3><a href="#real-world-example-1" id="real-world-example-1" class="anchor"></a>Real-World Example</h3>
+<pre><code class="language-scala">import kraft.dsl.graphql.*
+import kraft.dsl.*
+
+case class Event(id: String, title: String, startsAt: String)
+
+val EventType = objectType(&quot;Event&quot;).build()
+
+class EventGraphQL(repo: EventRepository):
+  val schema = Schema(
+    Query(
+      field[List[Event]](&quot;events&quot;, ListType(EventType))
+        .arg[String](&quot;startsAt&quot;, StringType)
+        .arg[String](&quot;endsAt&quot;, StringType)
+        .resolve { ctx =&gt;
+          val startsAt = ctx.arg[String](&quot;startsAt&quot;).map(parseDate)
+          val endsAt = ctx.arg[String](&quot;endsAt&quot;).map(parseDate)
+          repo.search(startsAt, endsAt)
+        }
+        .build(),
+
+      field[Option[Event]](&quot;event&quot;, EventType)
+        .arg[String](&quot;id&quot;, IDType)
+        .resolve(ctx =&gt; repo.find(ctx.requireArg(&quot;id&quot;)))
+        .build()
+    )
+  )
+
+  // HTTP route for GraphQL endpoint
+  val routes = HttpRoutes(
+    POST(&quot;/graphql&quot;) { req =&gt;
+      val response = schema.executeJson(req.bodyText)
+      Ok(response)
+    }
+  )
+</code></pre>
+<hr />
+<h2><a href="#chapter-16-grpc-dsl" id="chapter-16-grpc-dsl" class="anchor"></a>Chapter 16: gRPC DSL</h2>
+<p>The gRPC DSL provides type-safe gRPC service definitions and client/server stubs.</p>
+<h3><a href="#defining-a-service" id="defining-a-service" class="anchor"></a>Defining a Service</h3>
+<pre><code class="language-scala">import kraft.dsl.grpc.*
+
+// Define request/response types
+case class HelloRequest(name: String)
+case class HelloReply(message: String)
+
+// Define the service
+val greeterService = GrpcService(&quot;Greeter&quot;)
+  .unary[HelloRequest, HelloReply](&quot;SayHello&quot;) { req =&gt;
+    HelloReply(s&quot;Hello, ${req.name}!&quot;)
+  }
+  .serverStream[HelloRequest, HelloReply](&quot;SayHelloMany&quot;) { req =&gt;
+    LazyList(
+      HelloReply(s&quot;Hello, ${req.name}!&quot;),
+      HelloReply(s&quot;Hi again, ${req.name}!&quot;),
+      HelloReply(s&quot;Goodbye, ${req.name}!&quot;)
+    )
+  }
+  .build()
+</code></pre>
+<h3><a href="#method-types" id="method-types" class="anchor"></a>Method Types</h3>
+<p>The DSL supports all four gRPC method types:</p>
+<pre><code class="language-scala">// Unary: single request, single response
+.unary[Req, Res](&quot;Method&quot;) { req =&gt; response }
+
+// Server streaming: single request, stream of responses
+.serverStream[Req, Res](&quot;Method&quot;) { req =&gt; LazyList(...) }
+
+// Client streaming: stream of requests, single response
+.clientStream[Req, Res](&quot;Method&quot;) { requests =&gt; response }
+
+// Bidirectional streaming: stream of requests, stream of responses
+.bidiStream[Req, Res](&quot;Method&quot;) { requests =&gt; LazyList(...) }
+</code></pre>
+<h3><a href="#context-access" id="context-access" class="anchor"></a>Context Access</h3>
+<p>Access metadata and cancellation in handlers:</p>
+<pre><code class="language-scala">val service = GrpcService(&quot;AuthService&quot;)
+  .unaryWithContext[HelloRequest, HelloReply](&quot;Greet&quot;) { (req, ctx) =&gt;
+    val token = ctx.metadata.get(&quot;authorization&quot;).getOrElse(&quot;none&quot;)
+    if ctx.isCancelled then throw GrpcException(GrpcStatus.Cancelled, &quot;Cancelled&quot;)
+    HelloReply(s&quot;Hello ${req.name}, token: $token&quot;)
+  }
+  .build()
+</code></pre>
+<h3><a href="#creating-a-server" id="creating-a-server" class="anchor"></a>Creating a Server</h3>
+<pre><code class="language-scala">val server = GrpcServer(greeterService, calculatorService)
+
+// Handle requests
+server.handleUnary(&quot;Greeter&quot;, &quot;SayHello&quot;, requestJson) match
+  case Right(responseJson) =&gt; // Success
+  case Left(error) =&gt; // GrpcException with status code
+</code></pre>
+<h3><a href="#creating-a-client-1" id="creating-a-client-1" class="anchor"></a>Creating a Client</h3>
+<pre><code class="language-scala">val client = GrpcClient.connect(&quot;localhost:50051&quot;)
+  .withMetadata(&quot;authorization&quot;, &quot;Bearer token&quot;)
+  .build()
+
+// Make a unary call
+val result = client.call[HelloRequest, HelloReply](
+  &quot;Greeter&quot;, &quot;SayHello&quot;, HelloRequest(&quot;World&quot;)
+)
+
+result match
+  case Right(reply) =&gt; println(reply.message)
+  case Left(error) =&gt; println(s&quot;Error: ${error.code} - ${error.message}&quot;)
+</code></pre>
+<h3><a href="#typed-service-stubs" id="typed-service-stubs" class="anchor"></a>Typed Service Stubs</h3>
+<p>Create typed stubs for cleaner code:</p>
+<pre><code class="language-scala">val stub = ServiceStub.forService(&quot;Greeter&quot;)
+  .withClient(client)
+
+val result = stub.unary[HelloRequest, HelloReply](&quot;SayHello&quot;, HelloRequest(&quot;Alice&quot;))
+</code></pre>
+<h3><a href="#standard-status-codes" id="standard-status-codes" class="anchor"></a>Standard Status Codes</h3>
+<pre><code class="language-scala">GrpcStatus.OK              // 0
+GrpcStatus.Cancelled       // 1
+GrpcStatus.InvalidArgument // 3
+GrpcStatus.NotFound        // 5
+GrpcStatus.Internal        // 13
+GrpcStatus.Unavailable     // 14
+</code></pre>
+<h2><a href="#dsl-operator-reference" id="dsl-operator-reference" class="anchor"></a>DSL Operator Reference</h2>
+<table>
+<thead>
+<tr><th>Operator</th><th>Meaning</th><th>Example</th></tr>
+</thead>
+<tbody>
+<tr><td><code>GET(&quot;/path&quot;)</code></td><td>Simple route</td><td><code>GET(&quot;/health&quot;) { req =&gt; Ok(&quot;ok&quot;) }</code></td></tr>
+<tr><td><code>GET / &quot;path&quot;</code></td><td>Path builder</td><td><code>(GET / &quot;users&quot; / &quot;list&quot;)</code></td></tr>
+<tr><td><code>? param[T](&quot;name&quot;)</code></td><td>Optional param</td><td><code>? param[Int](&quot;page&quot;)</code></td></tr>
+<tr><td><code>?! param[T](&quot;name&quot;)</code></td><td>Required param</td><td><code>?! param[Int](&quot;page&quot;)</code></td></tr>
+<tr><td><code>&amp; param[T](&quot;name&quot;)</code></td><td>Additional optional param</td><td><code>&amp; param[Int](&quot;limit&quot;)</code></td></tr>
+<tr><td><code>&amp;! param[T](&quot;name&quot;)</code></td><td>Additional required param</td><td><code>&amp;! param[Int](&quot;limit&quot;)</code></td></tr>
+<tr><td><code>?&gt; header[T](&quot;name&quot;)</code></td><td>Optional header</td><td><code>?&gt; header[String](&quot;Authorization&quot;)</code></td></tr>
+<tr><td><code>&amp;&gt; header[T](&quot;name&quot;)</code></td><td>Additional header</td><td><code>&amp;&gt; header[String](&quot;X-Request-Id&quot;)</code></td></tr>
+<tr><td><code>&gt; body[T]</code></td><td>Body decoder</td><td><code>&gt; body[CreateEvent]</code></td></tr>
+<tr><td><code>withRequest</code></td><td>Access full request</td><td><code>{ (param, req) =&gt; ... }</code></td></tr>
+<tr><td><code>&lt;+&gt;</code></td><td>Compose routes</td><td><code>routes1 &lt;+&gt; routes2</code></td></tr>
+</tbody>
+</table>
+<hr />
+<h2><a href="#implementation-details" id="implementation-details" class="anchor"></a>Implementation Details</h2>
+<p>Under the hood, the DSL compiles to efficient route matching:</p>
+<ol>
+<li><strong>RouteWithPath</strong> — Holds method + path pattern</li>
+<li><strong>ParamExtractor</strong> — Extracts and decodes query params using <code>QueryDecoder[T]</code></li>
+<li><strong>HeaderExtractor</strong> — Extracts and decodes headers</li>
+<li><strong>Route builders</strong> — Chain extractors with <code>?</code>, <code>&amp;</code>, <code>&amp;&gt;</code>, <code>&gt;</code></li>
+<li><strong>HttpRoutes</strong> — Partial function matching requests to responses</li>
+</ol>
+<p>The result is <strong>zero runtime overhead</strong> beyond the actual extraction work—no reflection, no runtime type checking. Types are resolved at compile time, making the DSL both safe and fast.</p>
+<hr />
+<h2><a href="#further-reading" id="further-reading" class="anchor"></a>Further Reading</h2>
+<ul>
+<li><strong><a href="app-book.html">Application Book</a></strong> — How features use the DSL in practice</li>
+<li><strong><a href="server-book.html">Server Book</a></strong> — The high-performance HTTP server</li>
+<li><strong><a href="bookgen-book.html">BookGen</a></strong> — Documentation generation</li>
+<li><strong><a href="durable-book.html">Durable Execution</a></strong> — Durable workflows with cluster support</li>
+</ul>
+<p>
+<footer class="generated-footer">
+  <p>Generated from narrative Markdown with live benchmark data</p>
+  <p class="timestamp">Kraft Durable Workflows - Event Search API</p>
+</footer></p>
+
+  <script>
+    const STYLES = ['modern', 'editorial'];
+    function cycleStyle() {
+      const html = document.documentElement;
+      const current = html.getAttribute('data-style') || 'modern';
+      const next = STYLES[(STYLES.indexOf(current) + 1) % STYLES.length];
+      html.setAttribute('data-style', next);
+      localStorage.setItem('style', next);
+      document.querySelector('.style-label').textContent = next === 'modern' ? 'Aa' : 'Ed';
+    }
+    function toggleTheme() {
+      const html = document.documentElement;
+      const current = html.getAttribute('data-theme');
+      const next = current === 'dark' ? 'light' : 'dark';
+      html.setAttribute('data-theme', next);
+      localStorage.setItem('theme', next);
+      document.getElementById('hljs-theme-dark').disabled = (next === 'light');
+      document.getElementById('hljs-theme-light').disabled = (next !== 'light');
+    }
+    (function() {
+      const style = document.documentElement.getAttribute('data-style') || 'editorial';
+      document.querySelector('.style-label').textContent = style === 'modern' ? 'Aa' : 'Ed';
+      if (typeof hljs !== 'undefined') hljs.highlightAll();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kraft Event Search API - Performance Journey</title>
+  <script>
+    (function() {
+      var savedTheme = localStorage.getItem('theme');
+      var savedStyle = localStorage.getItem('style');
+      var theme = savedTheme;
+      if (!theme) {
+        theme = (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+      }
+      var style = savedStyle || 'editorial';
+      document.documentElement.setAttribute('data-theme', theme);
+      document.documentElement.setAttribute('data-style', style);
+    })();
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: document.documentElement.getAttribute('data-theme') === 'light' ? 'default' : 'dark',
+      flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' }
+    });
+  </script>
+  <script src="c4-renderer.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" id="hljs-theme-dark">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css" id="hljs-theme-light">
+  <script>
+    (function() {
+      var theme = document.documentElement.getAttribute('data-theme');
+      document.getElementById('hljs-theme-dark').disabled = (theme === 'light');
+      document.getElementById('hljs-theme-light').disabled = (theme !== 'light');
+    })();
+  </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/go.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/scala.min.js"></script>
+  <style>
+    :root, [data-theme="dark"] {
+      --bg-primary: #0d1117;
+      --bg-secondary: #161b22;
+      --bg-tertiary: #21262d;
+      --text-primary: #c9d1d9;
+      --text-secondary: #8b949e;
+      --gray-50: #f9fafb;
+      --gray-100: #f3f4f6;
+      --gray-200: #e5e7eb;
+      --gray-300: #d1d5db;
+      --gray-400: #9ca3af;
+      --gray-500: #6b7280;
+      --gray-600: #4b5563;
+      --gray-700: #374151;
+      --gray-800: #1f2937;
+      --gray-900: #111827;
+      --accent-primary: #c9d1d9;
+      --accent-green: #c9d1d9;
+      --accent-blue: #58a6ff;
+      --accent-orange: #d29922;
+      --accent-red: #f85149;
+      --accent-purple: #a371f7;
+      --border-color: #30363d;
+      --code-bg: #21262d;
+      --heading-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      --body-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      --panel-radius: 8px;
+      --panel-border: 1px solid var(--border-color);
+      --panel-bg: var(--bg-secondary);
+      --panel-padding: 1.5rem;
+    }
+    [data-theme="light"] {
+      --bg-primary: #ffffff;
+      --bg-secondary: #f6f8fa;
+      --bg-tertiary: #eaeef2;
+      --text-primary: #1f2328;
+      --text-secondary: #656d76;
+      --accent-primary: #374151;
+      --accent-green: #374151;
+      --accent-blue: #0969da;
+      --accent-orange: #9a6700;
+      --accent-red: #cf222e;
+      --accent-purple: #8250df;
+      --border-color: #d0d7de;
+      --code-bg: #eaeef2;
+    }
+    [data-style="editorial"] {
+      --heading-font: 'Georgia', 'Times New Roman', serif;
+      --body-font: 'Georgia', 'Times New Roman', serif;
+      --panel-radius: 0;
+      --panel-border: none;
+      --panel-bg: transparent;
+      --panel-padding: 0;
+    }
+    [data-style="editorial"][data-theme="dark"] {
+      --bg-primary: #1a1a1a;
+      --bg-secondary: #1a1a1a;
+      --bg-tertiary: #2a2a2a;
+      --text-primary: #e8e8e8;
+      --text-secondary: #999999;
+      --border-color: #333333;
+    }
+    [data-style="editorial"][data-theme="light"] {
+      --bg-primary: #faf9f6;
+      --bg-secondary: #faf9f6;
+      --bg-tertiary: #f0efe9;
+      --text-primary: #222222;
+      --text-secondary: #666666;
+      --border-color: #dddddd;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { background: var(--bg-primary); }
+    body {
+      font-family: var(--body-font);
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      line-height: 1.6;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+    canvas { background: transparent !important; }
+    h1, h2, h3, h4 {
+      font-family: var(--heading-font);
+      color: var(--text-primary);
+      margin: 2rem 0 1rem;
+      font-weight: 600;
+    }
+    h1 { font-size: 2.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem; }
+    h2 { font-size: 1.8rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.3rem; }
+    h3 { font-size: 1.4rem; }
+    h4 { font-size: 1.1rem; color: var(--text-secondary); }
+    [data-style="editorial"] h1 { font-size: 2.8rem; font-weight: 700; letter-spacing: -0.02em; border-bottom: 2px solid var(--text-primary); }
+    [data-style="editorial"] h2 { font-size: 1.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 3rem; }
+    [data-style="editorial"] h3 { font-size: 1.3rem; font-weight: 600; font-style: italic; }
+    [data-style="editorial"] p { font-size: 1.05rem; line-height: 1.75; }
+    p { margin: 1rem 0; }
+    em { color: var(--text-secondary); font-style: italic; }
+    strong { color: var(--accent-green); font-weight: 600; }
+    a { color: var(--accent-blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code {
+      background: var(--bg-tertiary);
+      padding: 0.2rem 0.4rem;
+      border-radius: 4px;
+      font-family: 'SFMono-Regular', Consolas, monospace;
+      font-size: 0.9em;
+    }
+    pre {
+      background: var(--bg-secondary) !important;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 1rem;
+      overflow-x: auto;
+      margin: 1rem 0;
+    }
+    pre code { background: transparent !important; padding: 0; }
+    pre code.hljs, .hljs { background: transparent !important; }
+    hr { border: none; border-top: 1px solid var(--border-color); margin: 3rem 0; }
+    table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+    th, td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid var(--border-color); }
+    th { background: var(--bg-secondary); font-weight: 600; color: var(--text-secondary); }
+    tr:hover { background: var(--bg-secondary); }
+    ul, ol { margin: 1rem 0; padding-left: 2rem; }
+    li { margin: 0.5rem 0; }
+    .rps { font-weight: 600; color: var(--accent-blue); }
+    .improvement { color: var(--accent-green); }
+    .chart-container {
+      background: var(--panel-bg);
+      border: var(--panel-border);
+      border-radius: var(--panel-radius);
+      padding: var(--panel-padding);
+      margin: 2rem 0;
+    }
+    .chart-container h4 { margin: 0 0 1rem; color: var(--text-primary); }
+    [data-style="editorial"] .chart-container { border-bottom: 1px solid var(--border-color); padding-bottom: 2rem; margin-bottom: 2rem; }
+    [data-style="editorial"] .chart-container h4 { font-family: var(--heading-font); font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-secondary); margin-bottom: 1.5rem; }
+    .git-visualization { background: var(--panel-bg); border: var(--panel-border); border-radius: var(--panel-radius); padding: var(--panel-padding); margin: 2rem 0; }
+    [data-style="editorial"] .git-visualization { border-left: 3px solid var(--accent-blue); padding-left: 1.5rem; }
+    .branch-label { display: inline-block; background: var(--accent-green); color: var(--bg-primary); padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.85rem; font-weight: 600; margin-bottom: 1rem; }
+    .commits { position: relative; padding-left: 2rem; }
+    .commits::before { content: ''; position: absolute; left: 0.5rem; top: 0; bottom: 0; width: 2px; background: var(--accent-green); }
+    .git-commit { position: relative; display: flex; align-items: flex-start; margin-bottom: 1rem; padding: 0.5rem 0; }
+    .git-commit .node { position: absolute; left: -1.65rem; width: 12px; height: 12px; background: var(--accent-green); border-radius: 50%; border: 2px solid var(--bg-secondary); }
+    .git-commit .node.final { width: 16px; height: 16px; left: -1.75rem; background: linear-gradient(135deg, var(--accent-green), var(--accent-blue)); box-shadow: 0 0 10px rgba(63, 185, 80, 0.5); }
+    .commit-info { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+    .commit-info .tag { background: var(--bg-tertiary); color: var(--accent-blue); padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.8rem; }
+    .commit-info .message { color: var(--text-primary); }
+    .commit-info .improvement { color: var(--accent-green); font-weight: 600; }
+    .table-container { background: var(--panel-bg); border: var(--panel-border); border-radius: var(--panel-radius); padding: var(--panel-padding); margin: 2rem 0; overflow-x: auto; }
+    .table-container h4 { margin: 0 0 1rem; }
+    [data-style="editorial"] .table-container { padding: 0; }
+    [data-style="editorial"] .table-container h4 { font-family: var(--heading-font); font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-secondary); padding-bottom: 0.5rem; border-bottom: 1px solid var(--border-color); }
+    .generated-footer { margin-top: 4rem; padding-top: 2rem; border-top: 1px solid var(--border-color); text-align: center; color: var(--text-secondary); font-size: 0.9rem; }
+    .c4-diagram, .mermaid-diagram { background: var(--panel-bg); border: var(--panel-border); border-radius: var(--panel-radius); padding: var(--panel-padding); margin: 2rem 0; overflow: visible; }
+    .c4-diagram h4, .mermaid-diagram h4 { margin: 0 0 1rem; color: var(--text-primary); }
+    .c4-diagram .mermaid, .mermaid-diagram .mermaid { background: transparent; min-height: 400px; }
+    .c4-diagram svg, .mermaid-diagram svg { max-width: 100%; height: auto !important; overflow: visible; }
+    .c4-diagram .relation { stroke-width: 1.5px; }
+    .c4-diagram .messageText { font-size: 12px; fill: var(--text-secondary); }
+    .c4-diagram .boundary { overflow: visible; }
+    .mermaid-diagram .node rect, .mermaid-diagram .node polygon { fill: #438dd5 !important; stroke: #1168bd !important; }
+    .mermaid-diagram .node .label { color: #fff !important; }
+    .mermaid-diagram .cluster rect { fill: transparent !important; stroke: #444 !important; stroke-dasharray: 5,5; }
+    .mermaid-diagram .cluster span { color: var(--text-primary) !important; }
+    .mermaid-diagram .edgePath path { stroke: #666 !important; }
+    .mermaid-diagram .edgeLabel { background: var(--panel-bg) !important; }
+    [data-theme="light"] .mermaid-diagram .node rect, [data-theme="light"] .mermaid-diagram .node polygon { fill: #438dd5 !important; stroke: #1168bd !important; }
+    [data-theme="light"] .mermaid-diagram .cluster rect { stroke: #999 !important; }
+    .controls { position: fixed; top: 1.5rem; right: 1.5rem; display: flex; gap: 0.75rem; z-index: 1000; }
+    .control-btn { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--border-color); background: var(--bg-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.3s ease; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); }
+    .control-btn:hover { transform: scale(1.1); border-color: var(--accent-blue); }
+    .control-btn svg { width: 20px; height: 20px; fill: var(--text-primary); }
+    .theme-toggle .sun-icon { display: none; }
+    .theme-toggle .moon-icon { display: block; }
+    [data-theme="light"] .theme-toggle .sun-icon { display: block; }
+    [data-theme="light"] .theme-toggle .moon-icon { display: none; }
+    .style-toggle { font-family: var(--heading-font); font-size: 11px; font-weight: 700; }
+    .style-toggle .style-label { color: var(--text-primary); }
+    @media (max-width: 768px) { body { padding: 1rem; } h1 { font-size: 1.8rem; } }
+  </style>
+</head>
+<body>
+  <div class="controls">
+    <button class="control-btn style-toggle" onclick="cycleStyle()" title="Switch style"><span class="style-label">Aa</span></button>
+    <button class="control-btn theme-toggle" onclick="toggleTheme()" title="Toggle theme">
+      <svg class="sun-icon" viewBox="0 0 24 24"><path d="M12 17.5a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11zm0 1.5a7 7 0 1 1 0-14 7 7 0 0 1 0 14zm0-17a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0v-1.5A.75.75 0 0 1 12 2z"/></svg>
+      <svg class="moon-icon" viewBox="0 0 24 24"><path d="M9.37 5.51A7.35 7.35 0 0 0 9.1 7.5c0 4.08 3.32 7.4 7.4 7.4.68 0 1.35-.09 1.99-.27A7.014 7.014 0 0 1 12 19c-3.86 0-7-3.14-7-7 0-2.93 1.81-5.45 4.37-6.49z"/></svg>
+    </button>
+  </div>
+  <h1><a href="#bookgen-living-documentation-generator" id="bookgen-living-documentation-generator" class="anchor"></a>BookGen: Living Documentation Generator</h1>
+<p><em>Empowering teams to document their reasoning</em></p>
+<hr />
+<h2><a href="#philosophy" id="philosophy" class="anchor"></a>Philosophy</h2>
+<p>Traditional documentation becomes stale the moment it's written. BookGen takes a different approach: <strong>documentation lives alongside your data</strong>.</p>
+<p>Instead of static markdown, BookGen processes narrative documents with embedded directives that pull live data from your benchmarks, metrics, and version history. When you run a new benchmark, your documentation updates automatically.</p>
+<p><strong>Why this matters for teams:</strong></p>
+<ul>
+<li><strong>Document reasoning, not just code</strong> — Explain <em>why</em> you made architectural decisions, backed by real performance data</li>
+<li><strong>Proposals with proof</strong> — When proposing a new feature or optimization, embed the benchmarks that justify it</li>
+<li><strong>Living changelogs</strong> — Your performance journey is documented as you go, not reconstructed later</li>
+<li><strong>Lower barrier to contribution</strong> — Engineers write Markdown they know, directives handle the complexity</li>
+</ul>
+<hr />
+<h2><a href="#live-demo" id="live-demo" class="anchor"></a>Live Demo</h2>
+<p>This section demonstrates BookGen directives rendering live data. Everything below is generated from the demo database — the same techniques power the Server Library documentation.</p>
+<h3><a href="#live-metrics" id="live-metrics" class="anchor"></a>Live Metrics</h3>
+<p>Our demo optimization journey took us from <strong>45,000 RPS</strong> to <strong>425,000 RPS</strong> — an improvement of <strong>844.4%</strong>.</p>
+<h3><a href="#version-timeline" id="version-timeline" class="anchor"></a>Version Timeline</h3>
+<p>
+<div class="git-visualization">
+  <div class="git-branch main">
+    <div class="branch-label">main</div>
+    <div class="commits">
+      <div class="git-commit">
+        <div class="node"></div>
+        <div class="commit-line"></div>
+        <div class="commit-info">
+          <code class="tag">v1-baseline</code>
+          <span class="message">Initial Implementation</span>
+          <span class="rps">45000 RPS</span>
+        </div>
+      </div>
+      <div class="git-commit">
+        <div class="node"></div>
+        <div class="commit-line"></div>
+        <div class="commit-info">
+          <code class="tag">v2-sonic-json</code>
+          <span class="message">Sonic JSON</span>
+          <span class="rps">89000 RPS</span>
+        </div>
+      </div>
+      <div class="git-commit">
+        <div class="node"></div>
+        <div class="commit-line"></div>
+        <div class="commit-info">
+          <code class="tag">v3-connection-pooling</code>
+          <span class="message">Connection Pooling</span>
+          <span class="rps">156000 RPS</span>
+        </div>
+      </div>
+      <div class="git-commit">
+        <div class="node"></div>
+        <div class="commit-line"></div>
+        <div class="commit-info">
+          <code class="tag">v4-response-cache</code>
+          <span class="message">Response Caching</span>
+          <span class="rps">312000 RPS</span>
+        </div>
+      </div>
+      <div class="git-commit">
+        <div class="node final"></div>
+        <div class="commit-line"></div>
+        <div class="commit-info">
+          <code class="tag">v5-final</code>
+          <span class="message">Production Ready</span>
+          <span class="rps">425000 RPS</span>
+        </div>
+      </div></div>
+  </div>
+</div></p>
+<h3><a href="#performance-chart" id="performance-chart" class="anchor"></a>Performance Chart</h3>
+<p>
+<div class="chart-container">
+  <h4>RPS by Version</h4>
+  <canvas id="chart_1"></canvas>
+  <script>
+    (function() {
+      const ctx = document.getElementById('chart_1').getContext('2d');
+      new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: ["v1-baseline","v2-sonic-json","v3-connection-pooling","v4-response-cache","v5-final"],
+          datasets: [{
+      label: 'default',
+      data: [45000.0,89000.0,156000.0,312000.0,425000.0],
+      borderColor: '#3498db',
+      backgroundColor: '#3498db22',
+      borderWidth: 2,
+      fill: false,
+      tension: 0.3
+    }]
+        },
+        options: {
+          "responsive": true,
+          "plugins": { "legend": { "position": "top" } },
+          "scales": { "y": { "beginAtZero": true } }
+        }
+      });
+    })();
+  </script>
+</div></p>
+<h3><a href="#latency-analysis" id="latency-analysis" class="anchor"></a>Latency Analysis</h3>
+<p>
+<div class="chart-container">
+  <h4>P99 Latency at Different Concurrency Levels</h4>
+  <canvas id="chart_2"></canvas>
+  <script>
+    (function() {
+      const ctx = document.getElementById('chart_2').getContext('2d');
+      new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: [100,200,500],
+          datasets: [{
+      label: 'v1-baseline',
+      data: [4500.0,9200.0,24000.0],
+      borderColor: '#3498db',
+      backgroundColor: '#3498db22',
+      borderWidth: 2,
+      fill: false,
+      tension: 0.3
+    },
+{
+      label: 'v3-connection-pooling',
+      data: [1300.0,2700.0,6800.0],
+      borderColor: '#e74c3c',
+      backgroundColor: '#e74c3c22',
+      borderWidth: 2,
+      fill: false,
+      tension: 0.3
+    },
+{
+      label: 'v5-final',
+      data: [480.0,980.0,2500.0],
+      borderColor: '#27ae60',
+      backgroundColor: '#27ae6022',
+      borderWidth: 2,
+      fill: false,
+      tension: 0.3
+    }]
+        },
+        options: {
+          "responsive": true,
+          "plugins": { "legend": { "position": "top" } },
+          "scales": { "y": { "beginAtZero": true } }
+        }
+      });
+    })();
+  </script>
+</div></p>
+<h3><a href="#version-summary-table" id="version-summary-table" class="anchor"></a>Version Summary Table</h3>
+<p>
+<div class="table-container">
+  <h4>Optimization Milestones</h4>
+  <table class="data-table">
+    <thead><tr><th>Version</th><th>Technique</th><th>RPS</th><th>Improvement</th></tr></thead>
+    <tbody><tr><td>v1-baseline</td><td>Initial Implementation</td><td>45,000</td><td>+0.0%</td></tr><tr><td>v2-sonic-json</td><td>Sonic JSON</td><td>89,000</td><td>+97.8%</td></tr><tr><td>v3-connection-pooling</td><td>Connection Pooling</td><td>156,000</td><td>+246.7%</td></tr><tr><td>v4-response-cache</td><td>Response Caching</td><td>312,000</td><td>+593.3%</td></tr><tr><td>v5-final</td><td>Production Ready</td><td>425,000</td><td>+844.4%</td></tr></tbody>
+  </table>
+</div></p>
+<hr />
+<h2><a href="#quick-start" id="quick-start" class="anchor"></a>Quick Start</h2>
+<pre><code class="language-bash"># Generate a single document
+go run ./cmd/bookgen -input docs/book.md -output book.html -db docs/benchmarks.db
+
+# Generate without database (static markdown only)
+go run ./cmd/bookgen -input README.md -output readme.html -no-db
+
+# Generate all project documentation
+make docs
+</code></pre>
+<hr />
+<h2><a href="#directive-reference" id="directive-reference" class="anchor"></a>Directive Reference</h2>
+<p>Directives are HTML comments with a special syntax:</p>
+<pre><code>&lt;!-- @directive:param=&quot;value&quot; param2=&quot;value2&quot; --&gt;
+</code></pre>
+<h3><a href="#metric--display-live-metrics" id="metric--display-live-metrics" class="anchor"></a>@metric — Display Live Metrics</h3>
+<p>Pull values directly from your benchmark database.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr><th>Parameter</th><th>Required</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>tag</code></td><td>Yes</td><td>Version tag to query (e.g., &quot;v1-baseline&quot;)</td></tr>
+<tr><td><code>field</code></td><td>No</td><td>Specific field: <code>improvement_percent</code>, <code>p99_latency_us</code>, <code>p50_latency_us</code></td></tr>
+<tr><td><code>format</code></td><td>No</td><td>Output format: <code>short</code> (541K), <code>comma</code> (541,000), <code>decimal</code> (302.6)</td></tr>
+</tbody>
+</table>
+<p><strong>Examples:</strong></p>
+<pre><code class="language-markdown">Our server handles &lt;!-- @metric:tag=&quot;v5-response-cache&quot; format=&quot;short&quot; --&gt; requests per second.
+
+P99 latency is &lt;!-- @metric:tag=&quot;v4-observability&quot; field=&quot;p99_latency_us&quot; format=&quot;comma&quot; --&gt;µs.
+
+That's a &lt;!-- @metric:tag=&quot;v5-response-cache&quot; field=&quot;improvement_percent&quot; format=&quot;decimal&quot; --&gt;% improvement.
+</code></pre>
+<hr />
+<h3><a href="#chart--render-data-visualizations" id="chart--render-data-visualizations" class="anchor"></a>@chart — Render Data Visualizations</h3>
+<p>Create Chart.js visualizations from SQL queries.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr><th>Parameter</th><th>Required</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>title</code></td><td>No</td><td>Chart title (default: &quot;Performance Chart&quot;)</td></tr>
+<tr><td><code>query</code></td><td>Yes</td><td>SQL query returning x, y, and optionally series columns</td></tr>
+<tr><td><code>type</code></td><td>No</td><td>Chart type: <code>line</code>, <code>bar</code>, <code>scatter</code> (default: line)</td></tr>
+<tr><td><code>x</code></td><td>No</td><td>Column name for x-axis</td></tr>
+<tr><td><code>y</code></td><td>No</td><td>Column name for y-axis</td></tr>
+<tr><td><code>series</code></td><td>No</td><td>Column name for series grouping</td></tr>
+<tr><td><code>datasets</code></td><td>No</td><td>JSON config for styling each series</td></tr>
+<tr><td><code>options</code></td><td>No</td><td>Chart.js options object</td></tr>
+</tbody>
+</table>
+<p><strong>Example — Version Progression:</strong></p>
+<pre><code class="language-markdown">&lt;!-- @chart:title=&quot;Performance Over Versions&quot;
+     query=&quot;SELECT tag as version, baseline_rps as rps FROM versions ORDER BY chapter_number&quot;
+     type=&quot;bar&quot; --&gt;
+</code></pre>
+<p><strong>Example — Multi-Series with Custom Styling:</strong></p>
+<pre><code class="language-markdown">&lt;!-- @chart:title=&quot;Throughput vs Latency&quot;
+     query=&quot;SELECT concurrency, rps, p99_us, 'throughput' as metric FROM stress_results
+            UNION ALL
+            SELECT concurrency, rps, p99_us, 'latency' as metric FROM stress_results&quot;
+     series=&quot;metric&quot;
+     datasets='{&quot;throughput&quot;:{&quot;borderColor&quot;:&quot;#22c55e&quot;,&quot;label&quot;:&quot;RPS&quot;},&quot;latency&quot;:{&quot;borderColor&quot;:&quot;#ef4444&quot;,&quot;label&quot;:&quot;P99 Latency&quot;,&quot;yAxisID&quot;:&quot;y1&quot;}}'
+     options='{&quot;scales&quot;:{&quot;y1&quot;:{&quot;position&quot;:&quot;right&quot;,&quot;grid&quot;:{&quot;drawOnChartArea&quot;:false}}}}' --&gt;
+</code></pre>
+<hr />
+<h3><a href="#table--data-tables-from-queries" id="table--data-tables-from-queries" class="anchor"></a>@table — Data Tables from Queries</h3>
+<p>Render SQL results as styled HTML tables.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr><th>Parameter</th><th>Required</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>title</code></td><td>No</td><td>Table title (default: &quot;Data Table&quot;)</td></tr>
+<tr><td><code>query</code></td><td>Yes</td><td>SQL query</td></tr>
+<tr><td><code>columns</code></td><td>No</td><td>JSON config for headers and CSS classes</td></tr>
+</tbody>
+</table>
+<p><strong>Example:</strong></p>
+<pre><code class="language-markdown">&lt;!-- @table:title=&quot;Version History&quot;
+     query=&quot;SELECT tag, title, baseline_rps as 'RPS',
+            printf('%.1f%%', improvement_percent) as 'Improvement'
+            FROM versions ORDER BY chapter_number&quot;
+     columns='{&quot;RPS&quot;:{&quot;class&quot;:&quot;rps&quot;},&quot;Improvement&quot;:{&quot;class&quot;:&quot;improvement&quot;}}' --&gt;
+</code></pre>
+<hr />
+<h3><a href="#git--version-timeline-visualization" id="git--version-timeline-visualization" class="anchor"></a>@git — Version Timeline Visualization</h3>
+<p>Display your performance journey as a git-style branch visualization.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr><th>Parameter</th><th>Required</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>show</code></td><td>Yes</td><td>What to display: <code>&quot;branches&quot;</code></td></tr>
+</tbody>
+</table>
+<p><strong>Example:</strong></p>
+<pre><code class="language-markdown">&lt;!-- @git:show=&quot;branches&quot; --&gt;
+</code></pre>
+<p>This renders all versions from the database as commits on a branch, showing tags, titles, and RPS values.</p>
+<hr />
+<h3><a href="#c4--architecture-diagrams" id="c4--architecture-diagrams" class="anchor"></a>@c4 — Architecture Diagrams</h3>
+<p>Render C4 model diagrams using a custom DSL.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr><th>Parameter</th><th>Required</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>title</code></td><td>No</td><td>Diagram title</td></tr>
+<tr><td><code>diagram</code></td><td>Yes</td><td>C4 diagram definition</td></tr>
+</tbody>
+</table>
+<p><strong>Supported Elements:</strong></p>
+<ul>
+<li><code>Person(id, &quot;Name&quot;, &quot;Description&quot;)</code></li>
+<li><code>System(id, &quot;Name&quot;, &quot;Description&quot;)</code></li>
+<li><code>System_Ext(id, &quot;Name&quot;, &quot;Description&quot;)</code></li>
+<li><code>Container(id, &quot;Name&quot;, &quot;Tech&quot;, &quot;Description&quot;)</code></li>
+<li><code>ContainerDb(id, &quot;Name&quot;, &quot;Tech&quot;, &quot;Description&quot;)</code></li>
+<li><code>Component(id, &quot;Name&quot;, &quot;Tech&quot;, &quot;Description&quot;)</code></li>
+<li><code>Boundary(id, &quot;Name&quot;) { ... }</code></li>
+<li><code>Rel(from, to, &quot;Label&quot;)</code></li>
+</ul>
+<p><strong>Example:</strong></p>
+<pre><code class="language-markdown">&lt;!-- @c4:title=&quot;System Context&quot;
+     diagram=&quot;
+Person(user, \&quot;Developer\&quot;, \&quot;Writes documentation\&quot;)
+System(bookgen, \&quot;BookGen\&quot;, \&quot;Generates HTML from Markdown\&quot;)
+System_Ext(db, \&quot;SQLite\&quot;, \&quot;Benchmark data\&quot;)
+
+Rel(user, bookgen, \&quot;Writes Markdown\&quot;)
+Rel(bookgen, db, \&quot;Queries metrics\&quot;)
+&quot; --&gt;
+</code></pre>
+<hr />
+<h3><a href="#mermaid--general-diagrams" id="mermaid--general-diagrams" class="anchor"></a>@mermaid — General Diagrams</h3>
+<p>Embed any Mermaid diagram type.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr><th>Parameter</th><th>Required</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>title</code></td><td>No</td><td>Diagram title</td></tr>
+<tr><td><code>diagram</code></td><td>Yes</td><td>Mermaid diagram definition</td></tr>
+</tbody>
+</table>
+<p><strong>Example — Flowchart:</strong></p>
+<pre><code class="language-markdown">&lt;!-- @mermaid:title=&quot;Processing Pipeline&quot;
+     diagram=&quot;
+flowchart LR
+    A[Markdown] --&gt; B[Parse Directives]
+    B --&gt; C[Query Database]
+    C --&gt; D[Render HTML]
+    D --&gt; E[Output File]
+&quot; --&gt;
+</code></pre>
+<p><strong>Example — Sequence Diagram:</strong></p>
+<pre><code class="language-markdown">&lt;!-- @mermaid:diagram=&quot;
+sequenceDiagram
+    User-&gt;&gt;BookGen: Run generator
+    BookGen-&gt;&gt;SQLite: Query metrics
+    SQLite--&gt;&gt;BookGen: Return data
+    BookGen--&gt;&gt;User: HTML output
+&quot; --&gt;
+</code></pre>
+<hr />
+<h3><a href="#meta--document-metadata" id="meta--document-metadata" class="anchor"></a>@meta — Document Metadata</h3>
+<p>Set document metadata (not rendered).</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr><th>Parameter</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>title</code></td><td>Document title for HTML head</td></tr>
+</tbody>
+</table>
+<p><strong>Example:</strong></p>
+<pre><code class="language-markdown">&lt;!-- @meta:title=&quot;BookGen Documentation&quot; --&gt;
+</code></pre>
+<hr />
+<h3><a href="#footer--standard-footer" id="footer--standard-footer" class="anchor"></a>@footer — Standard Footer</h3>
+<p>Add a consistent footer to your document.</p>
+<pre><code class="language-markdown">&lt;!-- @footer:style=&quot;default&quot; --&gt;
+</code></pre>
+<hr />
+<h2><a href="#database-schema" id="database-schema" class="anchor"></a>Database Schema</h2>
+<p>BookGen expects a SQLite database with this core schema:</p>
+<pre><code class="language-sql">-- Version milestones (required for @metric, @git)
+CREATE TABLE versions (
+    tag TEXT PRIMARY KEY,
+    chapter_number REAL,
+    title TEXT,
+    description TEXT,
+    baseline_rps REAL,
+    improvement_percent REAL,
+    technique TEXT
+);
+
+-- Benchmark runs (optional, for detailed metrics)
+CREATE TABLE commits (
+    hash TEXT PRIMARY KEY,
+    tag TEXT,
+    message TEXT,
+    timestamp DATETIME
+);
+
+CREATE TABLE benchmark_runs (
+    id INTEGER PRIMARY KEY,
+    commit_hash TEXT REFERENCES commits(hash),
+    timestamp DATETIME
+);
+
+CREATE TABLE benchmark_results (
+    id INTEGER PRIMARY KEY,
+    run_id INTEGER REFERENCES benchmark_runs(id),
+    p50_latency_us REAL,
+    p99_latency_us REAL,
+    avg_latency_us REAL,
+    max_latency_us REAL,
+    requests_per_sec REAL
+);
+</code></pre>
+<hr />
+<h2><a href="#template-types" id="template-types" class="anchor"></a>Template Types</h2>
+<p>BookGen supports two HTML templates:</p>
+<h3><a href="#article-template-default" id="article-template-default" class="anchor"></a>Article Template (default)</h3>
+<p>Full-featured template with:</p>
+<ul>
+<li>Dark/light theme toggle</li>
+<li>Modern/editorial style toggle</li>
+<li>Code syntax highlighting</li>
+<li>Chart.js integration</li>
+<li>Mermaid diagram support</li>
+</ul>
+<p>Used for: Technical documentation, performance books, architecture docs.</p>
+<h3><a href="#landing-template" id="landing-template" class="anchor"></a>Landing Template</h3>
+<p>Minimal template for index pages with:</p>
+<ul>
+<li>Metric cards</li>
+<li>Navigation cards</li>
+<li>Responsive grid layout</li>
+</ul>
+<p>Triggered automatically when input file is named <code>index.md</code>.</p>
+<hr />
+<h2><a href="#cli-reference" id="cli-reference" class="anchor"></a>CLI Reference</h2>
+<pre><code>bookgen [flags]
+
+Flags:
+  -input string    Path to Markdown file (default &quot;book.md&quot;)
+  -output string   Path to output HTML file (default &quot;../index.html&quot;)
+  -db string       Path to SQLite database (default &quot;benchmarks.db&quot;)
+  -no-db           Skip database (for static markdown)
+  -all             Build all documentation files
+</code></pre>
+<hr />
+<h2><a href="#best-practices" id="best-practices" class="anchor"></a>Best Practices</h2>
+<h3><a href="#1-document-decisions-not-just-results" id="1-document-decisions-not-just-results" class="anchor"></a>1. Document Decisions, Not Just Results</h3>
+<p>Bad:</p>
+<blockquote>
+<p>&quot;We achieved 500K RPS.&quot;</p>
+</blockquote>
+<p>Good:</p>
+<blockquote>
+<p>&quot;After profiling revealed 40% of CPU time in JSON serialization, we implemented response caching. This reduced redundant work for repeated queries, achieving N/A RPS.&quot;</p>
+</blockquote>
+<h3><a href="#2-embed-evidence-in-proposals" id="2-embed-evidence-in-proposals" class="anchor"></a>2. Embed Evidence in Proposals</h3>
+<p>When proposing a change, include the benchmark that justifies it:</p>
+<pre><code class="language-markdown">## Proposal: Add Response Caching
+
+### Problem
+Repeated queries serialize the same JSON response.
+
+### Solution
+Cache serialized responses keyed by query parameters.
+
+### Evidence
+&lt;!-- @chart:title=&quot;Before vs After Caching&quot;
+     query=&quot;SELECT tag, baseline_rps FROM versions WHERE tag IN ('v4-observability','v5-response-cache')&quot;
+     type=&quot;bar&quot; --&gt;
+</code></pre>
+<h3><a href="#3-keep-queries-simple" id="3-keep-queries-simple" class="anchor"></a>3. Keep Queries Simple</h3>
+<p>Complex SQL in directives becomes hard to maintain. For complex analysis, create database views:</p>
+<pre><code class="language-sql">CREATE VIEW performance_summary AS
+SELECT v.tag, v.baseline_rps, br.p99_latency_us
+FROM versions v
+JOIN commits c ON c.tag = v.tag
+JOIN benchmark_runs r ON r.commit_hash = c.hash
+JOIN benchmark_results br ON br.run_id = r.id;
+</code></pre>
+<p>Then query the view:</p>
+<pre><code class="language-markdown">&lt;!-- @table:query=&quot;SELECT * FROM performance_summary&quot; --&gt;
+</code></pre>
+<h3><a href="#4-version-your-benchmarks" id="4-version-your-benchmarks" class="anchor"></a>4. Version Your Benchmarks</h3>
+<p>Always tag commits that correspond to benchmark runs. This creates a traceable history:</p>
+<pre><code class="language-bash">git tag v1-gin-baseline
+./scripts/benchmark.sh
+git tag v2-custom-router
+./scripts/benchmark.sh
+</code></pre>
+<hr />
+<h2><a href="#architecture" id="architecture" class="anchor"></a>Architecture</h2>
+<pre><code>pkg/bookgen/
+├── bookgen.go      # Interpreter, directive parsing
+├── directives.go   # Render functions for each directive type
+├── templates.go    # HTML template wrappers
+└── docs/
+    └── book.md     # This documentation
+
+cmd/bookgen/
+└── main.go         # CLI entry point
+</code></pre>
+<p>The Interpreter processes Markdown in two passes:</p>
+<ol>
+<li><strong>Directive expansion</strong> — Replace <code>&lt;!-- @directive --&gt;</code> with rendered HTML</li>
+<li><strong>Markdown conversion</strong> — Convert remaining Markdown to HTML via gomarkdown</li>
+</ol>
+<hr />
+<p><em>Built with BookGen — documentation that stays alive.</em></p>
+<p>
+<footer class="generated-footer">
+  <p>Generated from narrative Markdown with live benchmark data</p>
+  <p class="timestamp">Kraft Durable Workflows - Event Search API</p>
+</footer></p>
+
+  <script>
+    const STYLES = ['modern', 'editorial'];
+    function cycleStyle() {
+      const html = document.documentElement;
+      const current = html.getAttribute('data-style') || 'modern';
+      const next = STYLES[(STYLES.indexOf(current) + 1) % STYLES.length];
+      html.setAttribute('data-style', next);
+      localStorage.setItem('style', next);
+      document.querySelector('.style-label').textContent = next === 'modern' ? 'Aa' : 'Ed';
+    }
+    function toggleTheme() {
+      const html = document.documentElement;
+      const current = html.getAttribute('data-theme');
+      const next = current === 'dark' ? 'light' : 'dark';
+      html.setAttribute('data-theme', next);
+      localStorage.setItem('theme', next);
+      document.getElementById('hljs-theme-dark').disabled = (next === 'light');
+      document.getElementById('hljs-theme-light').disabled = (next !== 'light');
+    }
+    (function() {
+      const style = document.documentElement.getAttribute('data-style') || 'editorial';
+      document.querySelector('.style-label').textContent = style === 'modern' ? 'Aa' : 'Ed';
+      if (typeof hljs !== 'undefined') hljs.highlightAll();
+    })();
+  </script>
+</body>
+</html>

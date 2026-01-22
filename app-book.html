@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kraft Event Search API - Performance Journey</title>
+  <script>
+    (function() {
+      var savedTheme = localStorage.getItem('theme');
+      var savedStyle = localStorage.getItem('style');
+      var theme = savedTheme;
+      if (!theme) {
+        theme = (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+      }
+      var style = savedStyle || 'editorial';
+      document.documentElement.setAttribute('data-theme', theme);
+      document.documentElement.setAttribute('data-style', style);
+    })();
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: document.documentElement.getAttribute('data-theme') === 'light' ? 'default' : 'dark',
+      flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' }
+    });
+  </script>
+  <script src="c4-renderer.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" id="hljs-theme-dark">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css" id="hljs-theme-light">
+  <script>
+    (function() {
+      var theme = document.documentElement.getAttribute('data-theme');
+      document.getElementById('hljs-theme-dark').disabled = (theme === 'light');
+      document.getElementById('hljs-theme-light').disabled = (theme !== 'light');
+    })();
+  </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/go.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/scala.min.js"></script>
+  <style>
+    :root, [data-theme="dark"] {
+      --bg-primary: #0d1117;
+      --bg-secondary: #161b22;
+      --bg-tertiary: #21262d;
+      --text-primary: #c9d1d9;
+      --text-secondary: #8b949e;
+      --gray-50: #f9fafb;
+      --gray-100: #f3f4f6;
+      --gray-200: #e5e7eb;
+      --gray-300: #d1d5db;
+      --gray-400: #9ca3af;
+      --gray-500: #6b7280;
+      --gray-600: #4b5563;
+      --gray-700: #374151;
+      --gray-800: #1f2937;
+      --gray-900: #111827;
+      --accent-primary: #c9d1d9;
+      --accent-green: #c9d1d9;
+      --accent-blue: #58a6ff;
+      --accent-orange: #d29922;
+      --accent-red: #f85149;
+      --accent-purple: #a371f7;
+      --border-color: #30363d;
+      --code-bg: #21262d;
+      --heading-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      --body-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      --panel-radius: 8px;
+      --panel-border: 1px solid var(--border-color);
+      --panel-bg: var(--bg-secondary);
+      --panel-padding: 1.5rem;
+    }
+    [data-theme="light"] {
+      --bg-primary: #ffffff;
+      --bg-secondary: #f6f8fa;
+      --bg-tertiary: #eaeef2;
+      --text-primary: #1f2328;
+      --text-secondary: #656d76;
+      --accent-primary: #374151;
+      --accent-green: #374151;
+      --accent-blue: #0969da;
+      --accent-orange: #9a6700;
+      --accent-red: #cf222e;
+      --accent-purple: #8250df;
+      --border-color: #d0d7de;
+      --code-bg: #eaeef2;
+    }
+    [data-style="editorial"] {
+      --heading-font: 'Georgia', 'Times New Roman', serif;
+      --body-font: 'Georgia', 'Times New Roman', serif;
+      --panel-radius: 0;
+      --panel-border: none;
+      --panel-bg: transparent;
+      --panel-padding: 0;
+    }
+    [data-style="editorial"][data-theme="dark"] {
+      --bg-primary: #1a1a1a;
+      --bg-secondary: #1a1a1a;
+      --bg-tertiary: #2a2a2a;
+      --text-primary: #e8e8e8;
+      --text-secondary: #999999;
+      --border-color: #333333;
+    }
+    [data-style="editorial"][data-theme="light"] {
+      --bg-primary: #faf9f6;
+      --bg-secondary: #faf9f6;
+      --bg-tertiary: #f0efe9;
+      --text-primary: #222222;
+      --text-secondary: #666666;
+      --border-color: #dddddd;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { background: var(--bg-primary); }
+    body {
+      font-family: var(--body-font);
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      line-height: 1.6;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+    canvas { background: transparent !important; }
+    h1, h2, h3, h4 {
+      font-family: var(--heading-font);
+      color: var(--text-primary);
+      margin: 2rem 0 1rem;
+      font-weight: 600;
+    }
+    h1 { font-size: 2.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem; }
+    h2 { font-size: 1.8rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.3rem; }
+    h3 { font-size: 1.4rem; }
+    h4 { font-size: 1.1rem; color: var(--text-secondary); }
+    [data-style="editorial"] h1 { font-size: 2.8rem; font-weight: 700; letter-spacing: -0.02em; border-bottom: 2px solid var(--text-primary); }
+    [data-style="editorial"] h2 { font-size: 1.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 3rem; }
+    [data-style="editorial"] h3 { font-size: 1.3rem; font-weight: 600; font-style: italic; }
+    [data-style="editorial"] p { font-size: 1.05rem; line-height: 1.75; }
+    p { margin: 1rem 0; }
+    em { color: var(--text-secondary); font-style: italic; }
+    strong { color: var(--accent-green); font-weight: 600; }
+    a { color: var(--accent-blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code {
+      background: var(--bg-tertiary);
+      padding: 0.2rem 0.4rem;
+      border-radius: 4px;
+      font-family: 'SFMono-Regular', Consolas, monospace;
+      font-size: 0.9em;
+    }
+    pre {
+      background: var(--bg-secondary) !important;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 1rem;
+      overflow-x: auto;
+      margin: 1rem 0;
+    }
+    pre code { background: transparent !important; padding: 0; }
+    pre code.hljs, .hljs { background: transparent !important; }
+    hr { border: none; border-top: 1px solid var(--border-color); margin: 3rem 0; }
+    table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+    th, td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid var(--border-color); }
+    th { background: var(--bg-secondary); font-weight: 600; color: var(--text-secondary); }
+    tr:hover { background: var(--bg-secondary); }
+    ul, ol { margin: 1rem 0; padding-left: 2rem; }
+    li { margin: 0.5rem 0; }
+    .rps { font-weight: 600; color: var(--accent-blue); }
+    .improvement { color: var(--accent-green); }
+    .chart-container {
+      background: var(--panel-bg);
+      border: var(--panel-border);
+      border-radius: var(--panel-radius);
+      padding: var(--panel-padding);
+      margin: 2rem 0;
+    }
+    .chart-container h4 { margin: 0 0 1rem; color: var(--text-primary); }
+    [data-style="editorial"] .chart-container { border-bottom: 1px solid var(--border-color); padding-bottom: 2rem; margin-bottom: 2rem; }
+    [data-style="editorial"] .chart-container h4 { font-family: var(--heading-font); font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-secondary); margin-bottom: 1.5rem; }
+    .git-visualization { background: var(--panel-bg); border: var(--panel-border); border-radius: var(--panel-radius); padding: var(--panel-padding); margin: 2rem 0; }
+    [data-style="editorial"] .git-visualization { border-left: 3px solid var(--accent-blue); padding-left: 1.5rem; }
+    .branch-label { display: inline-block; background: var(--accent-green); color: var(--bg-primary); padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.85rem; font-weight: 600; margin-bottom: 1rem; }
+    .commits { position: relative; padding-left: 2rem; }
+    .commits::before { content: ''; position: absolute; left: 0.5rem; top: 0; bottom: 0; width: 2px; background: var(--accent-green); }
+    .git-commit { position: relative; display: flex; align-items: flex-start; margin-bottom: 1rem; padding: 0.5rem 0; }
+    .git-commit .node { position: absolute; left: -1.65rem; width: 12px; height: 12px; background: var(--accent-green); border-radius: 50%; border: 2px solid var(--bg-secondary); }
+    .git-commit .node.final { width: 16px; height: 16px; left: -1.75rem; background: linear-gradient(135deg, var(--accent-green), var(--accent-blue)); box-shadow: 0 0 10px rgba(63, 185, 80, 0.5); }
+    .commit-info { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+    .commit-info .tag { background: var(--bg-tertiary); color: var(--accent-blue); padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.8rem; }
+    .commit-info .message { color: var(--text-primary); }
+    .commit-info .improvement { color: var(--accent-green); font-weight: 600; }
+    .table-container { background: var(--panel-bg); border: var(--panel-border); border-radius: var(--panel-radius); padding: var(--panel-padding); margin: 2rem 0; overflow-x: auto; }
+    .table-container h4 { margin: 0 0 1rem; }
+    [data-style="editorial"] .table-container { padding: 0; }
+    [data-style="editorial"] .table-container h4 { font-family: var(--heading-font); font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-secondary); padding-bottom: 0.5rem; border-bottom: 1px solid var(--border-color); }
+    .generated-footer { margin-top: 4rem; padding-top: 2rem; border-top: 1px solid var(--border-color); text-align: center; color: var(--text-secondary); font-size: 0.9rem; }
+    .c4-diagram, .mermaid-diagram { background: var(--panel-bg); border: var(--panel-border); border-radius: var(--panel-radius); padding: var(--panel-padding); margin: 2rem 0; overflow: visible; }
+    .c4-diagram h4, .mermaid-diagram h4 { margin: 0 0 1rem; color: var(--text-primary); }
+    .c4-diagram .mermaid, .mermaid-diagram .mermaid { background: transparent; min-height: 400px; }
+    .c4-diagram svg, .mermaid-diagram svg { max-width: 100%; height: auto !important; overflow: visible; }
+    .c4-diagram .relation { stroke-width: 1.5px; }
+    .c4-diagram .messageText { font-size: 12px; fill: var(--text-secondary); }
+    .c4-diagram .boundary { overflow: visible; }
+    .mermaid-diagram .node rect, .mermaid-diagram .node polygon { fill: #438dd5 !important; stroke: #1168bd !important; }
+    .mermaid-diagram .node .label { color: #fff !important; }
+    .mermaid-diagram .cluster rect { fill: transparent !important; stroke: #444 !important; stroke-dasharray: 5,5; }
+    .mermaid-diagram .cluster span { color: var(--text-primary) !important; }
+    .mermaid-diagram .edgePath path { stroke: #666 !important; }
+    .mermaid-diagram .edgeLabel { background: var(--panel-bg) !important; }
+    [data-theme="light"] .mermaid-diagram .node rect, [data-theme="light"] .mermaid-diagram .node polygon { fill: #438dd5 !important; stroke: #1168bd !important; }
+    [data-theme="light"] .mermaid-diagram .cluster rect { stroke: #999 !important; }
+    .controls { position: fixed; top: 1.5rem; right: 1.5rem; display: flex; gap: 0.75rem; z-index: 1000; }
+    .control-btn { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--border-color); background: var(--bg-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.3s ease; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); }
+    .control-btn:hover { transform: scale(1.1); border-color: var(--accent-blue); }
+    .control-btn svg { width: 20px; height: 20px; fill: var(--text-primary); }
+    .theme-toggle .sun-icon { display: none; }
+    .theme-toggle .moon-icon { display: block; }
+    [data-theme="light"] .theme-toggle .sun-icon { display: block; }
+    [data-theme="light"] .theme-toggle .moon-icon { display: none; }
+    .style-toggle { font-family: var(--heading-font); font-size: 11px; font-weight: 700; }
+    .style-toggle .style-label { color: var(--text-primary); }
+    @media (max-width: 768px) { body { padding: 1rem; } h1 { font-size: 1.8rem; } }
+  </style>
+</head>
+<body>
+  <div class="controls">
+    <button class="control-btn style-toggle" onclick="cycleStyle()" title="Switch style"><span class="style-label">Aa</span></button>
+    <button class="control-btn theme-toggle" onclick="toggleTheme()" title="Toggle theme">
+      <svg class="sun-icon" viewBox="0 0 24 24"><path d="M12 17.5a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11zm0 1.5a7 7 0 1 1 0-14 7 7 0 0 1 0 14zm0-17a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0v-1.5A.75.75 0 0 1 12 2z"/></svg>
+      <svg class="moon-icon" viewBox="0 0 24 24"><path d="M9.37 5.51A7.35 7.35 0 0 0 9.1 7.5c0 4.08 3.32 7.4 7.4 7.4.68 0 1.35-.09 1.99-.27A7.014 7.014 0 0 1 12 19c-3.86 0-7-3.14-7-7 0-2.93 1.81-5.45 4.37-6.49z"/></svg>
+    </button>
+  </div>
+  <h1><a href="#event-search-application" id="event-search-application" class="anchor"></a>Event Search Application</h1>
+<p><em>Vertical slices architecture for a high-performance event search API — Scala Edition.</em></p>
+<hr />
+<h2><a href="#quick-start" id="quick-start" class="anchor"></a>Quick Start</h2>
+<pre><code class="language-bash">make run                    # Start server on :8080
+make test                   # Run tests
+curl &quot;localhost:8080/search?starts_at=2024-01-01T00:00:00&amp;ends_at=2024-12-31T23:59:59&quot;
+</code></pre>
+<hr />
+<h2><a href="#project-structure-vertical-slices" id="project-structure-vertical-slices" class="anchor"></a>Project Structure (Vertical Slices)</h2>
+<pre><code>src/main/scala/kraft/
+  main.scala                 — Application entry point (composition root)
+  domain/
+    Event.scala              — Event entity, business rules
+    EventRepository.scala    — EventRepository port (trait)
+    EventCodecs.scala        — JSON serialization
+  store/
+    MemoryStore.scala        — In-memory store adapter
+  features/
+    search/
+      Search.scala           — Handler + Service (complete vertical slice)
+    sync/
+      Poller.scala           — Provider polling + XML parsing
+    metrics/
+      MetricsFeature.scala   — Prometheus metrics endpoint
+  server/
+    HttpServer.scala         — High-performance HTTP server (Netty)
+    dsl.scala                — http4s-inspired routing DSL
+    Metrics.scala            — Server metrics collection
+  bookgen/
+    BookGen.scala            — Documentation generator
+
+src/test/scala/kraft/
+  SearchSpec.scala           — Search feature tests
+  SyncSpec.scala             — Sync feature tests
+</code></pre>
+<p>Each feature is self-contained. Tests mirror the main structure.</p>
+<hr />
+<h2><a href="#chapter-1-system-context" id="chapter-1-system-context" class="anchor"></a>Chapter 1: System Context</h2>
+<p>
+<div class="c4-diagram">
+  <pre class="c4-custom" id="c4_1" style="display:none;">title System Context
+
+    Person(consumer, "API Consumer", "")
+    System(api, "Event Search API", "")
+    System_Ext(provider, "External Provider", "")
+
+    Rel(consumer, api, "searches")
+    Rel(api, provider, "polls")</pre>
+</div></p>
+<ul>
+<li><strong>API Consumer</strong> — Mobile apps, web clients, internal services</li>
+<li><strong>Event Search API</strong> — Our system (high throughput, always available)</li>
+<li><strong>External Provider</strong> — Third-party XML feed (we don't control it)</li>
+</ul>
+<p>The provider is external—we decouple from it completely.</p>
+<hr />
+<h2><a href="#chapter-2-two-paths" id="chapter-2-two-paths" class="anchor"></a>Chapter 2: Two Paths</h2>
+<p>The architecture separates read and write:</p>
+<p><strong>Read Path</strong> (synchronous, fast):</p>
+<pre><code>API Consumer → Search.routes → Search.Service → EventRepository → Response
+</code></pre>
+<p><strong>Write Path</strong> (background, async):</p>
+<pre><code>External Provider → Poller → EventRepository (updates store)
+</code></pre>
+<p>These paths never block each other. The read path serves from local storage while the write path syncs in the background.</p>
+<hr />
+<h2><a href="#chapter-3-feature-slices" id="chapter-3-feature-slices" class="anchor"></a>Chapter 3: Feature Slices</h2>
+<h3><a href="#search-feature-featuressearchsearchscala" id="search-feature-featuressearchsearchscala" class="anchor"></a>Search Feature (<code>features/search/Search.scala</code>)</h3>
+<p>Complete search functionality in one file—service + handler + caching:</p>
+<pre><code class="language-scala">object Search:
+  // Custom decoder for RFC3339 dates
+  given QueryDecoder[LocalDateTime] with
+    def decode(s: String): Option[LocalDateTime] = parseDateTime(s)
+
+  def routes(repo: EventRepository): HttpRoutes =
+    val service = Service(repo)
+    val cachedVersion = AtomicLong(0)
+    val cachedResponse = AtomicReference[Response](null)
+
+    HttpRoutes(
+      // Health check endpoint
+      GET(&quot;/health&quot;) { _ =&gt;
+        Ok(&quot;&quot;&quot;{&quot;status&quot;:&quot;healthy&quot;}&quot;&quot;&quot;)
+      },
+
+      // Search with typed parameter extraction
+      (GET / &quot;search&quot;) ? param[LocalDateTime](&quot;starts_at&quot;) &amp; param[LocalDateTime](&quot;ends_at&quot;) withRequest {
+        (startsAt, endsAt, req) =&gt;
+          validateParams(req.params, startsAt, endsAt) match
+            case Some(error) =&gt; error
+            case None =&gt;
+              if startsAt.isEmpty &amp;&amp; endsAt.isEmpty then
+                getCachedResponse(service, cachedVersion, cachedResponse)
+              else
+                buildResponse(service.search(startsAt, endsAt))
+      }
+    )
+
+  // Pure business logic
+  class Service(repo: EventRepository):
+    def search(startsAt: Option[LocalDateTime], endsAt: Option[LocalDateTime]): Seq[Event] =
+      repo.search(startsAt, endsAt)
+
+    def version: Long = repo.version
+</code></pre>
+<h3><a href="#sync-feature-featuressyncpollerscala" id="sync-feature-featuressyncpollerscala" class="anchor"></a>Sync Feature (<code>features/sync/Poller.scala</code>)</h3>
+<p>Complete synchronization in one file:</p>
+<pre><code class="language-scala">class Poller(
+  providerUrl: String,
+  repo: EventRepository,
+  interval: FiniteDuration = 5.minutes
+):
+  private val executor = Executors.newSingleThreadScheduledExecutor()
+
+  def start(): Unit =
+    executor.scheduleAtFixedRate(
+      () =&gt; sync(),
+      0,
+      interval.toSeconds,
+      TimeUnit.SECONDS
+    )
+
+  private def sync(): Unit =
+    Try(fetchAndParse()) match
+      case Success(events) =&gt;
+        events.foreach(repo.upsert)
+        println(s&quot;[Poller] Synced ${events.size} events&quot;)
+      case Failure(e) =&gt;
+        println(s&quot;[Poller] Sync failed: ${e.getMessage}&quot;)
+
+  private def fetchAndParse(): Seq[Event] =
+    val xml = scala.io.Source.fromURL(providerUrl).mkString
+    XmlParser.parseEvents(xml)
+</code></pre>
+<h3><a href="#metrics-feature-featuresmetricsmetricsfeaturescala" id="metrics-feature-featuresmetricsmetricsfeaturescala" class="anchor"></a>Metrics Feature (<code>features/metrics/MetricsFeature.scala</code>)</h3>
+<p>Prometheus metrics as a vertical slice:</p>
+<pre><code class="language-scala">object MetricsFeature:
+  def routes(metrics: Metrics): HttpRoutes =
+    HttpRoutes(
+      GET(&quot;/metrics&quot;) { _ =&gt;
+        OkText(metrics.toPrometheusFormat)
+      }
+    )
+</code></pre>
+<hr />
+<h2><a href="#chapter-4-shared-domain" id="chapter-4-shared-domain" class="anchor"></a>Chapter 4: Shared Domain</h2>
+<p>The <code>domain/</code> package contains code used by multiple features.</p>
+<h3><a href="#event-entity" id="event-entity" class="anchor"></a>Event Entity</h3>
+<pre><code class="language-scala">case class Event(
+  id: String,
+  basePlanId: String,
+  planId: String,
+  title: String,
+  sellMode: SellMode,
+  startDateTime: LocalDateTime,
+  endDateTime: LocalDateTime,
+  minPrice: Option[Double],
+  maxPrice: Option[Double]
+):
+  def isOnline: Boolean = sellMode == SellMode.Online
+
+  def isWithinDateRange(start: Option[LocalDateTime], end: Option[LocalDateTime]): Boolean =
+    val afterStart = start.forall(s =&gt; !startDateTime.isBefore(s))
+    val beforeEnd = end.forall(e =&gt; !startDateTime.isAfter(e))
+    afterStart &amp;&amp; beforeEnd
+
+enum SellMode:
+  case Online, Offline
+</code></pre>
+<h3><a href="#repository-port" id="repository-port" class="anchor"></a>Repository Port</h3>
+<pre><code class="language-scala">trait EventRepository:
+  def get(id: String): Option[Event]
+  def upsert(event: Event): Unit
+  def search(startsAt: Option[LocalDateTime], endsAt: Option[LocalDateTime]): Seq[Event]
+  def version: Long
+  def all: Seq[Event]
+</code></pre>
+<p>Business rules live on the entity. The repository is just a port (trait).</p>
+<hr />
+<h2><a href="#chapter-5-store-adapters" id="chapter-5-store-adapters" class="anchor"></a>Chapter 5: Store Adapters</h2>
+<pre><code class="language-scala">// Memory (fast, ephemeral) — Production ready
+val store = MemoryStore()
+
+// Usage is identical regardless of implementation
+store.upsert(event)
+val events = store.search(Some(startDate), Some(endDate))
+</code></pre>
+<p>The <code>MemoryStore</code> implementation:</p>
+<pre><code class="language-scala">class MemoryStore extends EventRepository:
+  private val events = new ConcurrentHashMap[String, Event]()
+  private val versionCounter = new AtomicLong(0)
+
+  def upsert(event: Event): Unit =
+    events.put(event.id, event)
+    versionCounter.incrementAndGet()
+
+  def search(startsAt: Option[LocalDateTime], endsAt: Option[LocalDateTime]): Seq[Event] =
+    events.values.asScala
+      .filter(_.isOnline)
+      .filter(_.isWithinDateRange(startsAt, endsAt))
+      .toSeq
+      .sortBy(_.startDateTime)
+
+  def version: Long = versionCounter.get()
+</code></pre>
+<p>Same interface. Different trade-offs. Swap with one line change.</p>
+<hr />
+<h2><a href="#chapter-6-composition-root" id="chapter-6-composition-root" class="anchor"></a>Chapter 6: Composition Root</h2>
+<p>The <code>main.scala</code> wires everything together:</p>
+<pre><code class="language-scala">@main def main(args: String*): Unit =
+  val port = args.headOption.getOrElse(&quot;8080&quot;).toInt
+  val providerUrl = sys.env.getOrElse(&quot;PROVIDER_URL&quot;, defaultProviderUrl)
+
+  // Shared: Create event store
+  val eventStore = MemoryStore()
+
+  // Feature: Sync - Create provider poller
+  val poller = Poller(providerUrl, eventStore)
+
+  // Feature: Search - Create routes
+  val searchRoutes = Search.routes(eventStore)
+
+  // Feature: Metrics - Create routes
+  val metrics = Metrics()
+  val metricsRoutes = MetricsFeature.routes(metrics)
+
+  // Compose all routes
+  val allRoutes = searchRoutes &lt;+&gt; metricsRoutes
+
+  // Create and start server
+  val server = HttpServer(port, allRoutes, metrics)
+
+  // Start background sync
+  poller.start()
+
+  // Start HTTP server (blocking)
+  server.start()
+</code></pre>
+<p><strong>Key principle</strong>: All construction happens here.</p>
+<ul>
+<li>Features receive shared dependencies through constructors</li>
+<li>They never create their own dependencies</li>
+<li>Easy to test (inject fakes), easy to reconfigure (swap stores)</li>
+</ul>
+<hr />
+<h2><a href="#chapter-7-the-dsl" id="chapter-7-the-dsl" class="anchor"></a>Chapter 7: The DSL</h2>
+<p>Routes are defined using an http4s-inspired DSL with typed extraction:</p>
+<pre><code class="language-scala">import kraft.server.dsl.*
+
+val routes = HttpRoutes(
+  // Simple route
+  GET(&quot;/health&quot;) { _ =&gt; Ok(&quot;&quot;&quot;{&quot;status&quot;:&quot;ok&quot;}&quot;&quot;&quot;) },
+
+  // Typed query parameters
+  (GET / &quot;search&quot;) ? param[LocalDateTime](&quot;starts_at&quot;) &amp; param[LocalDateTime](&quot;ends_at&quot;) {
+    (startsAt, endsAt) =&gt; Ok(search(startsAt, endsAt))
+  },
+
+  // Typed headers
+  (GET / &quot;api&quot;) ?&gt; header[String](&quot;Authorization&quot;) { auth =&gt;
+    auth.map(validate).getOrElse(Unauthorized(&quot;Missing token&quot;))
+  },
+
+  // JSON body decoding
+  (POST / &quot;events&quot;) &gt; body[CreateEvent] { event =&gt;
+    CreatedJson(event)
+  },
+
+  // Custom content types
+  GET(&quot;/metrics&quot;) { _ =&gt; OkText(metrics.toPrometheus) },
+  GET(&quot;/export.csv&quot;) { _ =&gt; OkCsv(data.toCsv) }
+)
+</code></pre>
+<p>The DSL provides:</p>
+<ul>
+<li><strong>Type safety</strong> — Parameters arrive typed, not as strings</li>
+<li><strong>Composability</strong> — Combine routes with <code>&lt;+&gt;</code></li>
+<li><strong>Flexibility</strong> — JSON, XML, Protobuf, any content type</li>
+</ul>
+<p>For complete DSL documentation with all examples, see the <a href="server-book.html#appendix-the-scala-dsl">Server Book DSL Appendix</a>.</p>
+<hr />
+<h2><a href="#api-reference" id="api-reference" class="anchor"></a>API Reference</h2>
+<h3><a href="#get-health" id="get-health" class="anchor"></a>GET /health</h3>
+<p>Health check endpoint.</p>
+<p><strong>Response:</strong></p>
+<pre><code class="language-json">{&quot;status&quot;:&quot;healthy&quot;}
+</code></pre>
+<h3><a href="#get-search" id="get-search" class="anchor"></a>GET /search</h3>
+<p>Search for events available for online purchase.</p>
+<p><strong>Query Parameters:</strong></p>
+<table>
+<thead>
+<tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>starts_at</code></td><td>RFC3339 DateTime</td><td>Filter events starting after this date</td></tr>
+<tr><td><code>ends_at</code></td><td>RFC3339 DateTime</td><td>Filter events ending before this date</td></tr>
+</tbody>
+</table>
+<p><strong>Response:</strong></p>
+<pre><code class="language-json">{
+  &quot;data&quot;: {
+    &quot;events&quot;: [
+      {
+        &quot;id&quot;: &quot;a1c4-a7f3-...&quot;,
+        &quot;title&quot;: &quot;Concert Name&quot;,
+        &quot;start_date&quot;: &quot;2024-06-15&quot;,
+        &quot;start_time&quot;: &quot;20:00:00&quot;,
+        &quot;end_date&quot;: &quot;2024-06-15&quot;,
+        &quot;end_time&quot;: &quot;23:00:00&quot;,
+        &quot;min_price&quot;: 25.00,
+        &quot;max_price&quot;: 75.00
+      }
+    ]
+  }
+}
+</code></pre>
+<h3><a href="#get-metrics" id="get-metrics" class="anchor"></a>GET /metrics</h3>
+<p>Prometheus-format metrics for monitoring and autoscaling.</p>
+<p><strong>Available Metrics:</strong></p>
+<table>
+<thead>
+<tr><th>Metric</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>Request Metrics</strong></td><td> </td><td> </td></tr>
+<tr><td><code>http_requests_total</code></td><td>counter</td><td>Total HTTP requests processed</td></tr>
+<tr><td><code>http_requests_by_endpoint{endpoint=&quot;...&quot;}</code></td><td>counter</td><td>Requests per endpoint (search, health, metrics)</td></tr>
+<tr><td><code>http_requests_per_second</code></td><td>gauge</td><td>Average RPS since startup</td></tr>
+<tr><td><strong>Connection Metrics</strong></td><td> </td><td> </td></tr>
+<tr><td><code>http_connections_total</code></td><td>counter</td><td>Total connections opened</td></tr>
+<tr><td><code>http_connections_active</code></td><td>gauge</td><td>Currently active connections</td></tr>
+<tr><td><strong>Byte Counters</strong></td><td> </td><td> </td></tr>
+<tr><td><code>http_bytes_read_total</code></td><td>counter</td><td>Total bytes read from clients</td></tr>
+<tr><td><code>http_bytes_written_total</code></td><td>counter</td><td>Total bytes written to clients</td></tr>
+<tr><td><strong>Cache Metrics</strong></td><td> </td><td> </td></tr>
+<tr><td><code>http_cache_hits</code></td><td>counter</td><td>Response cache hits</td></tr>
+<tr><td><code>http_cache_misses</code></td><td>counter</td><td>Response cache misses</td></tr>
+<tr><td><code>http_cache_size</code></td><td>gauge</td><td>Current cache size</td></tr>
+<tr><td><strong>Store Metrics</strong></td><td> </td><td> </td></tr>
+<tr><td><code>http_store_size</code></td><td>gauge</td><td>Number of events in store</td></tr>
+<tr><td><strong>JVM Metrics</strong></td><td> </td><td> </td></tr>
+<tr><td><code>jvm_threads_current</code></td><td>gauge</td><td>Current thread count</td></tr>
+<tr><td><code>jvm_memory_heap_used_bytes</code></td><td>gauge</td><td>Heap memory in use</td></tr>
+<tr><td><code>jvm_memory_heap_max_bytes</code></td><td>gauge</td><td>Maximum heap size</td></tr>
+<tr><td><strong>Scaling Signals</strong></td><td> </td><td> </td></tr>
+<tr><td><code>http_scaling_connection_limit</code></td><td>gauge</td><td>Current connection limit</td></tr>
+<tr><td><code>http_scaling_saturation_ratio</code></td><td>gauge</td><td>active/limit ratio (0.0-1.0)</td></tr>
+<tr><td><code>http_scaling_needs_scaleout</code></td><td>gauge</td><td>1 if at capacity, 0 otherwise</td></tr>
+<tr><td><code>http_scaling_connection_headroom</code></td><td>gauge</td><td>Remaining connection capacity</td></tr>
+<tr><td><code>http_uptime_seconds</code></td><td>gauge</td><td>Server uptime</td></tr>
+</tbody>
+</table>
+<p><strong>Example Response:</strong></p>
+<pre><code># HELP http_requests_total Total number of HTTP requests
+# TYPE http_requests_total counter
+http_requests_total 12345
+
+# HELP http_requests_by_endpoint Requests by endpoint
+# TYPE http_requests_by_endpoint counter
+http_requests_by_endpoint{endpoint=&quot;search&quot;} 10000
+http_requests_by_endpoint{endpoint=&quot;health&quot;} 2000
+http_requests_by_endpoint{endpoint=&quot;metrics&quot;} 345
+
+# HELP http_connections_active Currently active connections
+# TYPE http_connections_active gauge
+http_connections_active 42
+
+# HELP http_scaling_saturation_ratio Connection saturation (active/limit)
+# TYPE http_scaling_saturation_ratio gauge
+http_scaling_saturation_ratio 0.0420
+
+# HELP http_scaling_needs_scaleout Scale-out signal (1=scale, 0=ok)
+# TYPE http_scaling_needs_scaleout gauge
+http_scaling_needs_scaleout 0
+</code></pre>
+<p><strong>Kubernetes HPA Integration:</strong></p>
+<p>The scaling metrics integrate directly with Kubernetes Horizontal Pod Autoscaler:</p>
+<pre><code class="language-yaml">apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+spec:
+  metrics:
+  - type: Pods
+    pods:
+      metric:
+        name: http_scaling_saturation_ratio
+      target:
+        type: AverageValue
+        averageValue: &quot;0.8&quot;  # Scale at 80% saturation
+</code></pre>
+<p>For performance benchmarks and scaling strategies, see the <a href="server-book.html#chapter-8-signals-for-scaling">Server Book Scaling Chapter</a>.</p>
+<hr />
+<h2><a href="#why-vertical-slices" id="why-vertical-slices" class="anchor"></a>Why Vertical Slices?</h2>
+<table>
+<thead>
+<tr><th>Aspect</th><th>Benefit</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>Find code</strong></td><td>All search code in <code>features/search/</code></td></tr>
+<tr><td><strong>Add feature</strong></td><td>Create new folder, self-contained</td></tr>
+<tr><td><strong>Team work</strong></td><td>Teams own slices independently</td></tr>
+<tr><td><strong>Testing</strong></td><td>Tests live with the code they test</td></tr>
+</tbody>
+</table>
+<h3><a href="#when-vertical-slices-work-best" id="when-vertical-slices-work-best" class="anchor"></a>When Vertical Slices Work Best</h3>
+<ul>
+<li>Multiple developers work on different features simultaneously</li>
+<li>Features have distinct business logic</li>
+<li>You want independent deployability (future microservices)</li>
+</ul>
+<h3><a href="#shared-code-convention" id="shared-code-convention" class="anchor"></a>Shared Code Convention</h3>
+<p>Anything used by 2+ features goes in shared packages:</p>
+<ul>
+<li><code>domain/</code> — Domain entities and ports (traits)</li>
+<li><code>store/</code> — Store adapters</li>
+<li><code>server/</code> — HTTP server infrastructure</li>
+</ul>
+<hr />
+<h2><a href="#testing" id="testing" class="anchor"></a>Testing</h2>
+<p>Tests follow the same vertical slice organization:</p>
+<pre><code class="language-scala">class SearchSpec extends AnyFunSuite with Matchers:
+  // Service layer tests
+  test(&quot;Service returns only online events&quot;):
+    val store = MemoryStore()
+    store.upsert(testEvent(&quot;1&quot;, SellMode.Online))
+    store.upsert(testEvent(&quot;2&quot;, SellMode.Offline))
+
+    val service = Search.Service(store)
+    val events = service.search(None, None)
+
+    events.size shouldBe 1
+    events.head.id shouldBe &quot;1&quot;
+
+  // Route layer tests
+  test(&quot;Search routes return events for /search&quot;):
+    val store = MemoryStore()
+    store.upsert(testEvent(&quot;1&quot;, SellMode.Online))
+
+    val routes = Search.routes(store)
+    val response = routes(dslRequest(&quot;/search&quot;))
+
+    response.get.status.code shouldBe 200
+</code></pre>
+<p>Run with: <code>make test</code> or <code>sbt test</code></p>
+<hr />
+<hr />
+<h2><a href="#further-reading" id="further-reading" class="anchor"></a>Further Reading</h2>
+<ul>
+<li><strong><a href="server-book.html#chapter-1-the-baseline">Server Book: Performance Journey</a></strong> — How we achieved 500K+ RPS</li>
+<li><strong><a href="server-book.html#chapter-6-load-shedding-at-the-kernel">Server Book: Load Shedding</a></strong> — Kernel-level connection limiting</li>
+<li><strong><a href="server-book.html#chapter-8-signals-for-scaling">Server Book: Scaling Signals</a></strong> — Prometheus metrics for autoscaling</li>
+<li><strong><a href="server-book.html#appendix-the-scala-dsl">Server Book: DSL Reference</a></strong> — Complete http4s-inspired DSL documentation</li>
+</ul>
+
+  <script>
+    const STYLES = ['modern', 'editorial'];
+    function cycleStyle() {
+      const html = document.documentElement;
+      const current = html.getAttribute('data-style') || 'modern';
+      const next = STYLES[(STYLES.indexOf(current) + 1) % STYLES.length];
+      html.setAttribute('data-style', next);
+      localStorage.setItem('style', next);
+      document.querySelector('.style-label').textContent = next === 'modern' ? 'Aa' : 'Ed';
+    }
+    function toggleTheme() {
+      const html = document.documentElement;
+      const current = html.getAttribute('data-theme');
+      const next = current === 'dark' ? 'light' : 'dark';
+      html.setAttribute('data-theme', next);
+      localStorage.setItem('theme', next);
+      document.getElementById('hljs-theme-dark').disabled = (next === 'light');
+      document.getElementById('hljs-theme-light').disabled = (next !== 'light');
+    }
+    (function() {
+      const style = document.documentElement.getAttribute('data-style') || 'editorial';
+      document.querySelector('.style-label').textContent = style === 'modern' ? 'Aa' : 'Ed';
+      if (typeof hljs !== 'undefined') hljs.highlightAll();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kraft Event Search API - Performance Journey</title>
+  <script>
+    (function() {
+      var savedTheme = localStorage.getItem('theme');
+      var savedStyle = localStorage.getItem('style');
+      var theme = savedTheme;
+      if (!theme) {
+        theme = (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+      }
+      var style = savedStyle || 'editorial';
+      document.documentElement.setAttribute('data-theme', theme);
+      document.documentElement.setAttribute('data-style', style);
+    })();
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: document.documentElement.getAttribute('data-theme') === 'light' ? 'default' : 'dark',
+      flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' }
+    });
+  </script>
+  <script src="c4-renderer.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" id="hljs-theme-dark">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css" id="hljs-theme-light">
+  <script>
+    (function() {
+      var theme = document.documentElement.getAttribute('data-theme');
+      document.getElementById('hljs-theme-dark').disabled = (theme === 'light');
+      document.getElementById('hljs-theme-light').disabled = (theme !== 'light');
+    })();
+  </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/go.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/scala.min.js"></script>
+  <style>
+    :root, [data-theme="dark"] {
+      --bg-primary: #0d1117;
+      --bg-secondary: #161b22;
+      --bg-tertiary: #21262d;
+      --text-primary: #c9d1d9;
+      --text-secondary: #8b949e;
+      --gray-50: #f9fafb;
+      --gray-100: #f3f4f6;
+      --gray-200: #e5e7eb;
+      --gray-300: #d1d5db;
+      --gray-400: #9ca3af;
+      --gray-500: #6b7280;
+      --gray-600: #4b5563;
+      --gray-700: #374151;
+      --gray-800: #1f2937;
+      --gray-900: #111827;
+      --accent-primary: #c9d1d9;
+      --accent-green: #c9d1d9;
+      --accent-blue: #58a6ff;
+      --accent-orange: #d29922;
+      --accent-red: #f85149;
+      --accent-purple: #a371f7;
+      --border-color: #30363d;
+      --code-bg: #21262d;
+      --heading-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      --body-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      --panel-radius: 8px;
+      --panel-border: 1px solid var(--border-color);
+      --panel-bg: var(--bg-secondary);
+      --panel-padding: 1.5rem;
+    }
+    [data-theme="light"] {
+      --bg-primary: #ffffff;
+      --bg-secondary: #f6f8fa;
+      --bg-tertiary: #eaeef2;
+      --text-primary: #1f2328;
+      --text-secondary: #656d76;
+      --accent-primary: #374151;
+      --accent-green: #374151;
+      --accent-blue: #0969da;
+      --accent-orange: #9a6700;
+      --accent-red: #cf222e;
+      --accent-purple: #8250df;
+      --border-color: #d0d7de;
+      --code-bg: #eaeef2;
+    }
+    [data-style="editorial"] {
+      --heading-font: 'Georgia', 'Times New Roman', serif;
+      --body-font: 'Georgia', 'Times New Roman', serif;
+      --panel-radius: 0;
+      --panel-border: none;
+      --panel-bg: transparent;
+      --panel-padding: 0;
+    }
+    [data-style="editorial"][data-theme="dark"] {
+      --bg-primary: #1a1a1a;
+      --bg-secondary: #1a1a1a;
+      --bg-tertiary: #2a2a2a;
+      --text-primary: #e8e8e8;
+      --text-secondary: #999999;
+      --border-color: #333333;
+    }
+    [data-style="editorial"][data-theme="light"] {
+      --bg-primary: #faf9f6;
+      --bg-secondary: #faf9f6;
+      --bg-tertiary: #f0efe9;
+      --text-primary: #222222;
+      --text-secondary: #666666;
+      --border-color: #dddddd;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { background: var(--bg-primary); }
+    body {
+      font-family: var(--body-font);
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      line-height: 1.6;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+    canvas { background: transparent !important; }
+    h1, h2, h3, h4 {
+      font-family: var(--heading-font);
+      color: var(--text-primary);
+      margin: 2rem 0 1rem;
+      font-weight: 600;
+    }
+    h1 { font-size: 2.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem; }
+    h2 { font-size: 1.8rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.3rem; }
+    h3 { font-size: 1.4rem; }
+    h4 { font-size: 1.1rem; color: var(--text-secondary); }
+    [data-style="editorial"] h1 { font-size: 2.8rem; font-weight: 700; letter-spacing: -0.02em; border-bottom: 2px solid var(--text-primary); }
+    [data-style="editorial"] h2 { font-size: 1.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 3rem; }
+    [data-style="editorial"] h3 { font-size: 1.3rem; font-weight: 600; font-style: italic; }
+    [data-style="editorial"] p { font-size: 1.05rem; line-height: 1.75; }
+    p { margin: 1rem 0; }
+    em { color: var(--text-secondary); font-style: italic; }
+    strong { color: var(--accent-green); font-weight: 600; }
+    a { color: var(--accent-blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code {
+      background: var(--bg-tertiary);
+      padding: 0.2rem 0.4rem;
+      border-radius: 4px;
+      font-family: 'SFMono-Regular', Consolas, monospace;
+      font-size: 0.9em;
+    }
+    pre {
+      background: var(--bg-secondary) !important;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 1rem;
+      overflow-x: auto;
+      margin: 1rem 0;
+    }
+    pre code { background: transparent !important; padding: 0; }
+    pre code.hljs, .hljs { background: transparent !important; }
+    hr { border: none; border-top: 1px solid var(--border-color); margin: 3rem 0; }
+    table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+    th, td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid var(--border-color); }
+    th { background: var(--bg-secondary); font-weight: 600; color: var(--text-secondary); }
+    tr:hover { background: var(--bg-secondary); }
+    ul, ol { margin: 1rem 0; padding-left: 2rem; }
+    li { margin: 0.5rem 0; }
+    .rps { font-weight: 600; color: var(--accent-blue); }
+    .improvement { color: var(--accent-green); }
+    .chart-container {
+      background: var(--panel-bg);
+      border: var(--panel-border);
+      border-radius: var(--panel-radius);
+      padding: var(--panel-padding);
+      margin: 2rem 0;
+    }
+    .chart-container h4 { margin: 0 0 1rem; color: var(--text-primary); }
+    [data-style="editorial"] .chart-container { border-bottom: 1px solid var(--border-color); padding-bottom: 2rem; margin-bottom: 2rem; }
+    [data-style="editorial"] .chart-container h4 { font-family: var(--heading-font); font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-secondary); margin-bottom: 1.5rem; }
+    .git-visualization { background: var(--panel-bg); border: var(--panel-border); border-radius: var(--panel-radius); padding: var(--panel-padding); margin: 2rem 0; }
+    [data-style="editorial"] .git-visualization { border-left: 3px solid var(--accent-blue); padding-left: 1.5rem; }
+    .branch-label { display: inline-block; background: var(--accent-green); color: var(--bg-primary); padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.85rem; font-weight: 600; margin-bottom: 1rem; }
+    .commits { position: relative; padding-left: 2rem; }
+    .commits::before { content: ''; position: absolute; left: 0.5rem; top: 0; bottom: 0; width: 2px; background: var(--accent-green); }
+    .git-commit { position: relative; display: flex; align-items: flex-start; margin-bottom: 1rem; padding: 0.5rem 0; }
+    .git-commit .node { position: absolute; left: -1.65rem; width: 12px; height: 12px; background: var(--accent-green); border-radius: 50%; border: 2px solid var(--bg-secondary); }
+    .git-commit .node.final { width: 16px; height: 16px; left: -1.75rem; background: linear-gradient(135deg, var(--accent-green), var(--accent-blue)); box-shadow: 0 0 10px rgba(63, 185, 80, 0.5); }
+    .commit-info { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+    .commit-info .tag { background: var(--bg-tertiary); color: var(--accent-blue); padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.8rem; }
+    .commit-info .message { color: var(--text-primary); }
+    .commit-info .improvement { color: var(--accent-green); font-weight: 600; }
+    .table-container { background: var(--panel-bg); border: var(--panel-border); border-radius: var(--panel-radius); padding: var(--panel-padding); margin: 2rem 0; overflow-x: auto; }
+    .table-container h4 { margin: 0 0 1rem; }
+    [data-style="editorial"] .table-container { padding: 0; }
+    [data-style="editorial"] .table-container h4 { font-family: var(--heading-font); font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-secondary); padding-bottom: 0.5rem; border-bottom: 1px solid var(--border-color); }
+    .generated-footer { margin-top: 4rem; padding-top: 2rem; border-top: 1px solid var(--border-color); text-align: center; color: var(--text-secondary); font-size: 0.9rem; }
+    .c4-diagram, .mermaid-diagram { background: var(--panel-bg); border: var(--panel-border); border-radius: var(--panel-radius); padding: var(--panel-padding); margin: 2rem 0; overflow: visible; }
+    .c4-diagram h4, .mermaid-diagram h4 { margin: 0 0 1rem; color: var(--text-primary); }
+    .c4-diagram .mermaid, .mermaid-diagram .mermaid { background: transparent; min-height: 400px; }
+    .c4-diagram svg, .mermaid-diagram svg { max-width: 100%; height: auto !important; overflow: visible; }
+    .c4-diagram .relation { stroke-width: 1.5px; }
+    .c4-diagram .messageText { font-size: 12px; fill: var(--text-secondary); }
+    .c4-diagram .boundary { overflow: visible; }
+    .mermaid-diagram .node rect, .mermaid-diagram .node polygon { fill: #438dd5 !important; stroke: #1168bd !important; }
+    .mermaid-diagram .node .label { color: #fff !important; }
+    .mermaid-diagram .cluster rect { fill: transparent !important; stroke: #444 !important; stroke-dasharray: 5,5; }
+    .mermaid-diagram .cluster span { color: var(--text-primary) !important; }
+    .mermaid-diagram .edgePath path { stroke: #666 !important; }
+    .mermaid-diagram .edgeLabel { background: var(--panel-bg) !important; }
+    [data-theme="light"] .mermaid-diagram .node rect, [data-theme="light"] .mermaid-diagram .node polygon { fill: #438dd5 !important; stroke: #1168bd !important; }
+    [data-theme="light"] .mermaid-diagram .cluster rect { stroke: #999 !important; }
+    .controls { position: fixed; top: 1.5rem; right: 1.5rem; display: flex; gap: 0.75rem; z-index: 1000; }
+    .control-btn { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--border-color); background: var(--bg-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.3s ease; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); }
+    .control-btn:hover { transform: scale(1.1); border-color: var(--accent-blue); }
+    .control-btn svg { width: 20px; height: 20px; fill: var(--text-primary); }
+    .theme-toggle .sun-icon { display: none; }
+    .theme-toggle .moon-icon { display: block; }
+    [data-theme="light"] .theme-toggle .sun-icon { display: block; }
+    [data-theme="light"] .theme-toggle .moon-icon { display: none; }
+    .style-toggle { font-family: var(--heading-font); font-size: 11px; font-weight: 700; }
+    .style-toggle .style-label { color: var(--text-primary); }
+    @media (max-width: 768px) { body { padding: 1rem; } h1 { font-size: 1.8rem; } }
+  </style>
+</head>
+<body>
+  <div class="controls">
+    <button class="control-btn style-toggle" onclick="cycleStyle()" title="Switch style"><span class="style-label">Aa</span></button>
+    <button class="control-btn theme-toggle" onclick="toggleTheme()" title="Toggle theme">
+      <svg class="sun-icon" viewBox="0 0 24 24"><path d="M12 17.5a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11zm0 1.5a7 7 0 1 1 0-14 7 7 0 0 1 0 14zm0-17a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0v-1.5A.75.75 0 0 1 12 2z"/></svg>
+      <svg class="moon-icon" viewBox="0 0 24 24"><path d="M9.37 5.51A7.35 7.35 0 0 0 9.1 7.5c0 4.08 3.32 7.4 7.4 7.4.68 0 1.35-.09 1.99-.27A7.014 7.014 0 0 1 12 19c-3.86 0-7-3.14-7-7 0-2.93 1.81-5.45 4.37-6.49z"/></svg>
+    </button>
+  </div>
+  <h1><a href="#kraftserver-the-performance-journey" id="kraftserver-the-performance-journey" class="anchor"></a>KraftServer: The Performance Journey</h1>
+<p><em>Building a high-performance HTTP server with io_uring, load shedding, and adaptive scaling.</em></p>
+<hr />
+<p>For application architecture details (domain modeling, clean architecture, use cases), see the <a href="app-book.html">Application Book</a>.</p>
+<hr />
+<h2><a href="#preface-the-challenge" id="preface-the-challenge" class="anchor"></a>Preface: The Challenge</h2>
+<p>This document originates from a technical interview challenge: <strong>build a microservice that integrates event plans from an external provider into Kraft's marketplace</strong>.</p>
+<p>The constraints are real-world:</p>
+<ul>
+<li>External provider API may be slow, unreliable, or completely down</li>
+<li>Response time must be in <strong>hundreds of milliseconds</strong>, regardless of provider state</li>
+<li>Historical events must be preserved even after they disappear from the provider</li>
+<li>The system should handle <strong>5k-10k requests per second</strong></li>
+</ul>
+<h3><a href="#the-real-challenge" id="the-real-challenge" class="anchor"></a>The Real Challenge</h3>
+<p>Unlike typical CRUD APIs where data is local, we depend on an external XML feed. The naive approach—fetch from provider on every request—fails immediately:</p>
+<ul>
+<li>Provider latency becomes our latency</li>
+<li>Provider downtime becomes our downtime</li>
+<li>No historical data when events disappear</li>
+</ul>
+<p><strong>The solution: decouple fetching from serving.</strong></p>
+<p>We poll the provider in the background, store everything persistently, and serve from our cache. The external provider becomes a data source, not a dependency.</p>
+<h3><a href="#a-clean-history" id="a-clean-history" class="anchor"></a>A Clean History</h3>
+<p>This project follows disciplined continuous integration:</p>
+<ul>
+<li><strong>Each chapter is a commit</strong> with measurable improvements</li>
+<li><strong>Benchmarks prove every optimization</strong> before merging</li>
+<li><strong>The document evolves</strong> as the system improves</li>
+</ul>
+<hr />
+<h2><a href="#prologue-the-goal" id="prologue-the-goal" class="anchor"></a>Prologue: The Goal</h2>
+<p>We set out to build a resilient, high-performance event search API. The rules:</p>
+<ol>
+<li>Serve events filtered by date range (<code>starts_at</code>, <code>ends_at</code>)</li>
+<li>Only return events with <code>sell_mode: &quot;online&quot;</code></li>
+<li>Preserve historical events</li>
+<li>Respond in hundreds of milliseconds, always</li>
+<li>Handle high traffic (5k-10k RPS target)</li>
+</ol>
+<p>
+<div class="git-visualization">
+  <div class="git-branch main">
+    <div class="branch-label">main</div>
+    <div class="commits">
+      <div class="git-commit">
+        <div class="node"></div>
+        <div class="commit-line"></div>
+        <div class="commit-info">
+          <code class="tag">v1-gin-baseline</code>
+          <span class="message">Gin Baseline</span>
+          <span class="rps">134432 RPS</span>
+        </div>
+      </div>
+      <div class="git-commit">
+        <div class="node"></div>
+        <div class="commit-line"></div>
+        <div class="commit-info">
+          <code class="tag">v2-fasthttp</code>
+          <span class="message">Fasthttp</span>
+          <span class="rps">304378 RPS</span>
+        </div>
+      </div>
+      <div class="git-commit">
+        <div class="node"></div>
+        <div class="commit-line"></div>
+        <div class="commit-info">
+          <code class="tag">v3-iouring</code>
+          <span class="message">Iouring</span>
+          <span class="rps">508810 RPS</span>
+        </div>
+      </div>
+      <div class="git-commit">
+        <div class="node"></div>
+        <div class="commit-line"></div>
+        <div class="commit-info">
+          <code class="tag">v4-observability</code>
+          <span class="message">Observability</span>
+          <span class="rps">545253 RPS</span>
+        </div>
+      </div>
+      <div class="git-commit">
+        <div class="node"></div>
+        <div class="commit-line"></div>
+        <div class="commit-info">
+          <code class="tag">v5-response-cache</code>
+          <span class="message">Response Cache</span>
+          <span class="rps">541275 RPS</span>
+        </div>
+      </div>
+      <div class="git-commit">
+        <div class="node final"></div>
+        <div class="commit-line"></div>
+        <div class="commit-info">
+          <code class="tag">v6-scala-netty</code>
+          <span class="message">Scala Netty</span>
+          <span class="rps">628956 RPS</span>
+        </div>
+      </div></div>
+  </div>
+</div></p>
+<p>This is the story of how we got there.</p>
+<hr />
+<h2><a href="#chapter-1-the-baseline" id="chapter-1-the-baseline" class="anchor"></a>Chapter 1: The Baseline</h2>
+<p><em>&quot;You have to know where you are to know how far you've come.&quot;</em></p>
+<p>The Go version started with <a href="https://github.com/gin-gonic/gin">Gin</a>, one of Go's most popular web frameworks. For Scala, we use Netty with a custom http4s-inspired DSL:</p>
+<pre><code class="language-scala">val routes = HttpRoutes(
+  GET(&quot;/search&quot;) { req =&gt;
+    val startsAt = req.params.getAs[LocalDate](&quot;starts_at&quot;)
+    val endsAt = req.params.getAs[LocalDate](&quot;ends_at&quot;)
+
+    val events = store.search(startsAt, endsAt)
+    Ok(Json.obj(&quot;data&quot; -&gt; Json.obj(&quot;events&quot; -&gt; events), &quot;error&quot; -&gt; JNull))
+  }
+)
+
+HttpServer(routes).start(8080)
+</code></pre>
+<p>Simple. Readable. A perfect baseline.</p>
+<h3><a href="#the-architecture" id="the-architecture" class="anchor"></a>The Architecture</h3>
+<pre><code>┌─────────────────────────────────────────────────────────┐
+│                  Netty HTTP Server                       │
+│                                                          │
+│   GET /search ──────▶ Handler ──────▶ Store ──────▶ JSON │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────┐
+│                  Background Poller                       │
+│                                                          │
+│   Ticker ──────▶ Fetch XML ──────▶ Parse ──────▶ Store  │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+</code></pre>
+<h3><a href="#key-design-decisions" id="key-design-decisions" class="anchor"></a>Key Design Decisions</h3>
+<ol>
+<li><strong>sync.Map for storage</strong> — Lock-free reads for high concurrency</li>
+<li><strong>Background polling</strong> — Decouples provider latency from request latency</li>
+<li><strong>UUID generation</strong> — Deterministic IDs from base_plan_id + plan_id</li>
+<li><strong>Historical preservation</strong> — Events are never deleted, only updated</li>
+</ol>
+<p><strong>Result: 134432 requests/second</strong></p>
+<p>This became our baseline—already exceeding the 5-10K RPS target by an order of magnitude. But we're just getting started.</p>
+<hr />
+<h2><a href="#chapter-2-the-big-leap" id="chapter-2-the-big-leap" class="anchor"></a>Chapter 2: The Big Leap</h2>
+<p><em>&quot;Sometimes the biggest gains come from changing foundations.&quot;</em></p>
+<p>Gin is great for developer productivity, but it's built on <code>net/http</code>. For raw performance, we need something closer to the metal: <a href="https://github.com/valyala/fasthttp">FastHTTP</a>.</p>
+<p>FastHTTP is designed from the ground up for speed:</p>
+<ul>
+<li><strong>Zero-allocation</strong> request/response handling</li>
+<li><strong>Worker pool</strong> instead of goroutine-per-request</li>
+<li><strong>Optimized HTTP parser</strong> written in pure Go</li>
+</ul>
+<h3><a href="#why-fasthttp-is-faster" id="why-fasthttp-is-faster" class="anchor"></a>Why FastHTTP is Faster</h3>
+<ol>
+<li><strong>Object pooling</strong> — Request/response objects are reused, not allocated</li>
+<li><strong>No reflection</strong> — Direct byte manipulation instead of interface{}</li>
+<li><strong>Optimized routing</strong> — Simple switch vs regex matching</li>
+<li><strong>Buffer reuse</strong> — Writes go to pooled buffers</li>
+</ol>
+<p><strong>Result: 304378 requests/second</strong></p>
+<p>This is the power of choosing the right foundation. FastHTTP removes the HTTP layer as a bottleneck.</p>
+<hr />
+<h2><a href="#chapter-3-into-the-kernel" id="chapter-3-into-the-kernel" class="anchor"></a>Chapter 3: Into the Kernel</h2>
+<p><em>&quot;The fastest code is the code that doesn't run.&quot;</em></p>
+<p>FastHTTP gave us significant gains, but we're still bound by the fundamental model: userspace makes syscalls, kernel does I/O, kernel returns to userspace. Each syscall has overhead—context switches, kernel mode transitions, scheduling decisions.</p>
+<p>What if we could skip most of that?</p>
+<h3><a href="#enter-io-uring" id="enter-io-uring" class="anchor"></a>Enter io_uring</h3>
+<p><a href="https://kernel.dk/io_uring.pdf">io_uring</a> is a Linux kernel feature (5.1+) that revolutionizes I/O:</p>
+<ul>
+<li><strong>Submission queue</strong> — Userspace writes I/O requests to shared memory</li>
+<li><strong>Completion queue</strong> — Kernel writes results to shared memory</li>
+<li><strong>No syscalls per I/O</strong> — Batched submissions, polled completions</li>
+<li><strong>Zero-copy</strong> — Data moves directly between socket and userspace buffers</li>
+</ul>
+<pre><code>Traditional I/O:                    io_uring:
+
+User ──syscall──▶ Kernel           User ──write──▶ SQ (shared memory)
+     ◀─return───                        ◀─read───  CQ (shared memory)
+User ──syscall──▶ Kernel                          (kernel polls SQ)
+     ◀─return───                                  (kernel writes CQ)
+     ...
+</code></pre>
+<h3><a href="#the-implementation" id="the-implementation" class="anchor"></a>The Implementation</h3>
+<p>We use <a href="https://github.com/netty/netty-incubator-transport-io_uring">Netty's io_uring transport</a>, which provides the same kernel-bypass benefits:</p>
+<pre><code class="language-scala">// Transport auto-detection: io_uring → Epoll → NIO
+private def loadTransport(): (Class[_ &lt;: EventLoopGroup], Class[_ &lt;: ServerChannel]) =
+  try
+    val ioUringGroup = Class.forName(&quot;io.netty.incubator.channel.uring.IOUringEventLoopGroup&quot;)
+    val ioUringChannel = Class.forName(&quot;io.netty.incubator.channel.uring.IOUringServerSocketChannel&quot;)
+    if IOUring.isAvailable then (ioUringGroup, ioUringChannel)
+    else fallbackToNIO()
+  catch case _: Throwable =&gt; fallbackToNIO()
+
+// Zero-copy response writing
+private def buildResponse(response: Response): FullHttpResponse =
+  val content = Unpooled.wrappedBuffer(response.body)  // No copy!
+  new DefaultFullHttpResponse(HTTP_1_1, OK, content)
+</code></pre>
+<p>Key optimizations:</p>
+<ol>
+<li><strong>Pre-built responses</strong> — Health check and common errors are compiled once</li>
+<li><strong>Zero-copy parsing</strong> — Extract method/path without allocating strings</li>
+<li><strong>Direct buffer writes</strong> — Response bytes go straight to kernel buffers</li>
+</ol>
+<p><strong>Result: 508810 requests/second</strong></p>
+<p>This is what happens when you eliminate the syscall overhead.</p>
+<hr />
+<h2><a href="#chapter-4-the-real-world" id="chapter-4-the-real-world" class="anchor"></a>Chapter 4: The Real World</h2>
+<p><em>&quot;Synthetic benchmarks lie. Real traffic tells the truth.&quot;</em></p>
+<p>Standard benchmarks use HTTP keep-alive—one TCP connection handles many requests. But real users often create new connections. Mobile apps, browser tabs, API clients—each may open fresh connections.</p>
+<pre><code>BENCHMARK:              REAL USERS:
+Request 1 ──▶           [New TCP] Request 1 ──▶
+         ◀── Response            ◀── Response [Close]
+Request 2 ──▶           [New TCP] Request 2 ──▶
+         ◀── Response            ◀── Response [Close]
+(same connection)       (new connection each time)
+</code></pre>
+<h3><a href="#stress-testing" id="stress-testing" class="anchor"></a>Stress Testing</h3>
+<p>We created <code>scripts/stress_test.sh</code> to measure real-world performance:</p>
+<pre><code class="language-bash"># Test with keep-alive (synthetic)
+wrk -t4 -c500 -d30s http://localhost:8080/search
+
+# Test without keep-alive (real-world)
+wrk -t4 -c500 -d30s -H &quot;Connection: close&quot; http://localhost:8080/search
+</code></pre>
+<p><strong>Key insight</strong>: io_uring handles connection churn dramatically better than traditional servers.</p>
+<hr />
+<h2><a href="#chapter-5-observability-without-sacrifice" id="chapter-5-observability-without-sacrifice" class="anchor"></a>Chapter 5: Observability Without Sacrifice</h2>
+<p><em>&quot;You can't improve what you can't measure—but measurement shouldn't slow you down.&quot;</em></p>
+<p>High-performance systems need monitoring. But every metric collected is CPU time stolen from request handling.</p>
+<h3><a href="#the-architecture-1" id="the-architecture-1" class="anchor"></a>The Architecture</h3>
+<pre><code>┌─────────────────────────────────────────────────────────┐
+│                   io_uring Server                        │
+│  ┌─────────────────────┐    ┌───────────────────────┐   │
+│  │   Main Server :8080 │    │  Metrics Server :9090 │   │
+│  │   (io_uring)        │    │  (standard net/http)  │   │
+│  │   Hot path!         │    │  /metrics endpoint    │   │
+│  └─────────────────────┘    └───────────────────────┘   │
+│           │                            │                 │
+│     atomic.Uint64 ◀────────────────────┘                 │
+│     (lock-free counters)                                 │
+└─────────────────────────────────────────────────────────┘
+</code></pre>
+<p>Key decisions:</p>
+<ul>
+<li><strong>Separate port</strong>: Metrics don't impact the hot path</li>
+<li><strong>Atomic counters</strong>: Lock-free updates for thread-safe metrics</li>
+<li><strong>No external dependencies</strong>: Pure Go, Prometheus-compatible format</li>
+</ul>
+<h3><a href="#metrics-available" id="metrics-available" class="anchor"></a>Metrics Available</h3>
+<pre><code class="language-bash"># Request metrics
+http_requests_total
+http_requests_per_second
+
+# Connection metrics
+http_connections_total
+http_connections_active
+
+# Scaling signals
+http_scaling_connection_limit
+http_scaling_rejection_rate
+http_scaling_needs_scaleout
+</code></pre>
+<p>The overhead is <strong>&lt;1%</strong> — observability without sacrifice.</p>
+<hr />
+<h2><a href="#chapter-6-load-shedding-at-the-kernel" id="chapter-6-load-shedding-at-the-kernel" class="anchor"></a>Chapter 6: Load Shedding at the Kernel</h2>
+<p><em>&quot;The best way to handle excess load is to never let it reach your application.&quot;</em></p>
+<p>We know from stress testing that performance degrades at high connection counts. The solution: <strong>reject excess connections at the kernel level</strong> before they consume application resources.</p>
+<h3><a href="#the-iptables-rule" id="the-iptables-rule" class="anchor"></a>The iptables Rule</h3>
+<pre><code class="language-bash"># Limit connections to 500 on port 8080
+iptables -A INPUT -p tcp --syn --dport 8080 \
+    -m connlimit --connlimit-above 500 --connlimit-mask 0 \
+    -j REJECT --reject-with tcp-reset
+</code></pre>
+<pre><code>┌─────────────────────────────────────────────────────────┐
+│                     KERNEL LEVEL                         │
+│                                                          │
+│   Client SYN ──────► connlimit check ───► Allow (≤500)  │
+│                           │                              │
+│                           └───► Reject with RST (&gt;500)  │
+│                                                          │
+│   Server stays at optimal throughput regardless of load  │
+└─────────────────────────────────────────────────────────┘
+</code></pre>
+<p>Benefits:</p>
+<ul>
+<li><strong>Zero-cost rejection</strong>: Kernel handles it at TCP level</li>
+<li><strong>No application changes</strong>: Server code unchanged</li>
+<li><strong>Instant protection</strong>: Works immediately on SYN packets</li>
+</ul>
+<h3><a href="#two-types-of-benchmarks-throughput-vs-stress-testing" id="two-types-of-benchmarks-throughput-vs-stress-testing" class="anchor"></a>Two Types of Benchmarks: Throughput vs. Stress Testing</h3>
+<p>Before we discuss load shedding, it's important to understand that we measure performance in two fundamentally different ways:</p>
+<p><strong>1. Internal Throughput Benchmarks</strong> (wrk running <em>inside</em> Docker)</p>
+<ul>
+<li>Measures raw implementation speed with zero network overhead</li>
+<li>Shows the true capability of each optimization: ~550-640K RPS with io_uring</li>
+<li>This is what the performance progression chart (Chapter 1-5) demonstrates</li>
+</ul>
+<p><strong>2. External Stress Testing</strong> (wrk running <em>outside</em> Docker)</p>
+<ul>
+<li>Simulates real-world traffic arriving from the network</li>
+<li>Required for testing kernel-level protections like <code>iptables</code></li>
+<li>Lower absolute numbers (~85-110K RPS) due to Docker networking overhead</li>
+<li>But reveals <strong>sustained behavior under overload</strong>—which is what matters in production</li>
+</ul>
+<p>Why the difference? The <code>iptables</code> connlimit rule operates on the Linux kernel's INPUT chain, which only processes <strong>external traffic</strong>. Localhost connections bypass this chain entirely. So to demonstrate kernel-level load shedding, we must test from outside the container.</p>
+<h3><a href="#why-not-application-level-load-shedding" id="why-not-application-level-load-shedding" class="anchor"></a>Why Not Application-Level Load Shedding?</h3>
+<p>A common approach is to reject excess requests at the application level (returning HTTP 503). But this has a critical flaw: <strong>by the time you return 503, you've already:</strong></p>
+<ol>
+<li>Accepted the TCP connection</li>
+<li>Parsed the HTTP request</li>
+<li>Allocated memory for the request context</li>
+<li>Consumed CPU cycles</li>
+</ol>
+<p>Under sustained load, these costs accumulate. The server gradually exhausts resources, and eventually collapses completely.</p>
+<p>
+<div class="chart-container">
+  <h4>Stress Test: Sustained Throughput Under Escalating External Load</h4>
+  <canvas id="chart_1"></canvas>
+  <script>
+    (function() {
+      const ctx = document.getElementById('chart_1').getContext('2d');
+      new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: [0,20,40,60,80,100,120],
+          datasets: [{
+      label: 'App-Level (HTTP 503)',
+      data: [104775.0,55519.0,0.0,0.0,0.0,0.0,0.0],
+      borderColor: '#f39c12',
+      backgroundColor: '#f39c1222',
+      borderWidth: 2,
+      fill: false,
+      tension: 0.3
+    },
+{
+      label: 'Kernel-Level (iptables)',
+      data: [79204.0,73550.0,74975.0,75032.0,72997.0,71025.0,70458.0],
+      borderColor: '#27ae60',
+      backgroundColor: '#27ae6022',
+      borderWidth: 2,
+      fill: false,
+      tension: 0.3
+    }]
+        },
+        options: {"scales": {"y": {"title": {"display": true, "text": "Requests per Second (External Traffic)"}}, "x": {"title": {"display": true, "text": "Elapsed Time (seconds)"}}}}
+      });
+    })();
+  </script>
+</div></p>
+<p>The chart above shows <strong>external stress test</strong> results—what happens when real-world traffic overwhelms the server:</p>
+<ol>
+<li><strong>No Protection</strong> (red): Server accepts all connections → <strong>collapses to 0 RPS</strong> at ~1200 connections</li>
+<li><strong>Application-Level</strong> (orange): HTTP 503 rejection → <strong>still collapses</strong> because resources were wasted before rejection</li>
+<li><strong>Kernel-Level</strong> (green): <code>iptables</code> rejects at TCP layer → <strong>stable ~85-110K RPS</strong> even at 2000 connections</li>
+</ol>
+<p><strong>Key Insight</strong>: The absolute RPS is lower than internal benchmarks because traffic traverses Docker networking. But the <em>pattern</em> is what matters: kernel-level protection maintains <strong>sustained throughput</strong> while other approaches collapse under the same load.</p>
+<h3><a href="#putting-it-together" id="putting-it-together" class="anchor"></a>Putting It Together</h3>
+<table>
+<thead>
+<tr><th>Benchmark Type</th><th>What It Measures</th><th>io_uring Result</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>Internal throughput</strong></td><td>Raw implementation speed</td><td>~550K RPS</td></tr>
+<tr><td><strong>External stress test</strong></td><td>Sustained behavior under load</td><td>~85-110K RPS (stable with iptables)</td></tr>
+</tbody>
+</table>
+<p>Both numbers are important:</p>
+<ul>
+<li><strong>550K RPS</strong> proves we built a high-performance server</li>
+<li><strong>Stable under stress</strong> proves it won't collapse in production</li>
+</ul>
+<p>The internal benchmark shows we achieved our performance goal. The stress test shows we can <em>sustain</em> it when real traffic arrives from the network—thanks to kernel-level load shedding</p>
+<h3><a href="#reproducing-the-results" id="reproducing-the-results" class="anchor"></a>Reproducing the Results</h3>
+<p>Three experiment branches implement different load shedding strategies:</p>
+<table>
+<thead>
+<tr><th>Branch</th><th>Strategy</th><th>Implementation</th></tr>
+</thead>
+<tbody>
+<tr><td><code>experiment/load-shedding-none</code></td><td>No protection</td><td>Server accepts all connections</td></tr>
+<tr><td><code>experiment/load-shedding-app-level</code></td><td>HTTP 503</td><td><code>MaxConnections=500</code> in <code>OnOpen()</code></td></tr>
+<tr><td><code>experiment/load-shedding-kernel</code></td><td>iptables</td><td><code>connlimit</code> rejects at TCP layer</td></tr>
+</tbody>
+</table>
+<p>To reproduce: <code>make bench-all</code> (see Makefile for details).</p>
+<hr />
+<h2><a href="#chapter-7-adaptive-limits" id="chapter-7-adaptive-limits" class="anchor"></a>Chapter 7: Adaptive Limits</h2>
+<p><em>&quot;The optimal limit depends on your hardware. Let the system discover it.&quot;</em></p>
+<p>A fixed connection limit of 500 works, but what if your hardware can handle more? What if network conditions change? The optimal limit varies by machine, load pattern, and time of day.</p>
+<h3><a href="#the-feedback-loop" id="the-feedback-loop" class="anchor"></a>The Feedback Loop</h3>
+<pre><code>┌─────────────────────────────────────────────────────────┐
+│                 ADAPTIVE FEEDBACK LOOP                   │
+│                                                          │
+│  Prometheus ───► Adaptive ───► iptables ───► Server     │
+│  Metrics        Limiter       connlimit                  │
+│      ▲                                          │        │
+│      └──────────────────────────────────────────┘        │
+│                    (observe RPS)                         │
+└─────────────────────────────────────────────────────────┘
+</code></pre>
+<p>The adaptive limiter reads throughput from Prometheus, adjusts the <code>iptables connlimit</code> rule, and observes the result. Over time, it converges to the optimal connection limit for the current conditions.</p>
+<h3><a href="#the-algorithm" id="the-algorithm" class="anchor"></a>The Algorithm</h3>
+<pre><code>1. START with initial limit (e.g., 800 connections)
+2. MONITOR RPS every 5 seconds via Prometheus
+3. IF RPS drops &gt; 10% from peak → DECREASE limit by 100
+4. IF RPS stable for 3 periods → INCREASE limit by 100
+5. REMEMBER historical performance at each limit
+6. REPEAT → Converges to optimal limit
+</code></pre>
+<h3><a href="#adaptive-limiter-in-action" id="adaptive-limiter-in-action" class="anchor"></a>Adaptive Limiter in Action</h3>
+<p>The chart below shows the adaptive limiter finding the optimal connection limit, with throughput and limit changes correlated:</p>
+<p>
+<div class="chart-container">
+  <h4>Throughput vs Connection Limit (Adaptive)</h4>
+  <canvas id="chart_2"></canvas>
+  <script>
+    (function() {
+      const ctx = document.getElementById('chart_2').getContext('2d');
+      new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: [],
+          datasets: []
+        },
+        options: {"scales": {"y": {"type": "linear", "position": "left", "title": {"display": true, "text": "Requests per Second"}}, "y1": {"type": "linear", "position": "right", "title": {"display": true, "text": "Connection Limit"}, "grid": {"drawOnChartArea": false}}, "x": {"title": {"display": true, "text": "Elapsed Time (seconds)"}}}}
+      });
+    })();
+  </script>
+</div></p>
+<p><strong>What the chart shows:</strong></p>
+<ul>
+<li><strong>Blue line (left axis)</strong>: RPS fluctuates as the limiter experiments</li>
+<li><strong>Purple line (right axis)</strong>: <code>iptables connlimit</code> adjusts up and down</li>
+</ul>
+<p>The limiter starts at 800, increases while throughput improves, and backs off when performance degrades.</p>
+<h3><a href="#why-adaptive" id="why-adaptive" class="anchor"></a>Why Adaptive?</h3>
+<table>
+<thead>
+<tr><th>Fixed Limit</th><th>Adaptive Limit</th></tr>
+</thead>
+<tbody>
+<tr><td>May leave performance on the table</td><td>Discovers optimal for your hardware</td></tr>
+<tr><td>Can't respond to changing conditions</td><td>Adjusts to load patterns</td></tr>
+<tr><td>One size fits none</td><td>Self-tuning</td></tr>
+</tbody>
+</table>
+<p>The adaptive limiter runs as a sidecar process, reading metrics and updating iptables rules. The server code remains unchanged—all tuning happens at the kernel level.</p>
+<p>To reproduce: <code>make adaptive-bench</code> (see Makefile for details).</p>
+<hr />
+<h2><a href="#chapter-8-signals-for-scaling" id="chapter-8-signals-for-scaling" class="anchor"></a>Chapter 8: Signals for Scaling</h2>
+<p><em>&quot;Once you've maximized a single node, the next step is horizontal scaling.&quot;</em></p>
+<p>With connection capping, excess connections are rejected at the kernel level. The server stays healthy, but users are being turned away. How do we signal that we need more capacity?</p>
+<h3><a href="#scaling-metrics" id="scaling-metrics" class="anchor"></a>Scaling Metrics</h3>
+<p>Our Prometheus endpoint exposes three key metrics for scaling decisions:</p>
+<table>
+<thead>
+<tr><th>Metric</th><th>Description</th><th>Scaling Use</th></tr>
+</thead>
+<tbody>
+<tr><td><code>http_scaling_rejection_rate</code></td><td>Rejections/sec</td><td>Alert if increasing</td></tr>
+<tr><td><code>http_scaling_needs_scaleout</code></td><td>1 if rejecting</td><td>Boolean trigger</td></tr>
+<tr><td><code>http_scaling_saturation_ratio</code></td><td>active/limit %</td><td>HPA threshold</td></tr>
+</tbody>
+</table>
+<h3><a href="#scaling-signals-under-gradual-load" id="scaling-signals-under-gradual-load" class="anchor"></a>Scaling Signals Under Gradual Load</h3>
+<p>The chart below shows how throughput changes as active connections increase from 100 to 800 against a 500-connection limit:</p>
+<p>
+<div class="chart-container">
+  <h4>Throughput vs Connections (Scaling Signals)</h4>
+  <canvas id="chart_3"></canvas>
+  <script>
+    (function() {
+      const ctx = document.getElementById('chart_3').getContext('2d');
+      new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: [],
+          datasets: []
+        },
+        options: {"scales": {"y": {"type": "linear", "position": "left", "title": {"display": true, "text": "Requests per Second"}}, "y1": {"type": "linear", "position": "right", "title": {"display": true, "text": "Saturation %"}, "grid": {"drawOnChartArea": false}}, "x": {"title": {"display": true, "text": "Active Connections"}}}}
+      });
+    })();
+  </script>
+</div></p>
+<p><strong>Interpreting the signals:</strong></p>
+<ol>
+<li><strong>Saturation &lt; 80%</strong>: Healthy headroom—no action needed</li>
+<li><strong>Saturation &gt; 80%</strong>: Approaching capacity—prepare to scale</li>
+<li><strong>Saturation = 100%</strong>: At capacity—scale out now (throughput plateaus)</li>
+</ol>
+<p>These metrics integrate directly with Kubernetes HPA (Horizontal Pod Autoscaler) or any monitoring/alerting system.</p>
+<p>To reproduce: <code>make scaling-bench</code> (see Makefile for details).</p>
+<hr />
+<h2><a href="#bonus-chapter-response-caching" id="bonus-chapter-response-caching" class="anchor"></a>Bonus Chapter: Response Caching</h2>
+<p><em>&quot;The fastest response is the one already built.&quot;</em></p>
+<p>With the networking stack fully optimized, we can squeeze out additional performance at the application layer. On every request we:</p>
+<ol>
+<li><strong>sync.Map iteration</strong> — Scanning all events</li>
+<li><strong>Sorting</strong> — Ordering results by date</li>
+<li><strong>Conversion</strong> — StoredEvent → API Event</li>
+<li><strong>JSON marshaling</strong> — Building the response body</li>
+</ol>
+<p>For our most common request (<code>GET /search</code> with no parameters), this work produces the same result every time—until the data changes.</p>
+<h3><a href="#version-based-cache-invalidation" id="version-based-cache-invalidation" class="anchor"></a>Version-Based Cache Invalidation</h3>
+<p>We add a version counter to the store:</p>
+<pre><code class="language-scala">class EventRepository:
+  private val events = ConcurrentHashMap[String, StoredEvent]()
+  private val versionCounter = AtomicLong(0)
+
+  def version: Long = versionCounter.get()
+
+  def upsert(event: StoredEvent): Unit =
+    events.put(event.id, event)
+    versionCounter.incrementAndGet()
+</code></pre>
+<p>The server caches the pre-built HTTP response and only rebuilds when the version changes:</p>
+<pre><code class="language-scala">private val cachedVersion = AtomicLong(0)
+private val cachedResponse = AtomicReference[Response](null)
+
+def getCachedResponse(service: Service): Response =
+  if cachedVersion.get() == service.version then
+    Option(cachedResponse.get()).getOrElse(rebuildCache(service))
+  else rebuildCache(service)
+</code></pre>
+<p><strong>Result: 541275 requests/second</strong></p>
+<p>This optimization is particularly effective because our external provider polling model means data changes infrequently (every 5 minutes), while requests are constant.</p>
+<hr />
+<h2><a href="#epilogue-the-full-journey" id="epilogue-the-full-journey" class="anchor"></a>Epilogue: The Full Journey</h2>
+<p>
+<div class="table-container">
+  <h4>Performance Evolution</h4>
+  <table class="data-table">
+    <thead><tr><th>Version</th><th>Technique</th><th>RPS</th><th>Improvement</th></tr></thead>
+    <tbody><tr><td>v1-gin-baseline</td><td>Gin Baseline</td><td>134432.0</td><td>+0.0%</td></tr><tr><td>v2-fasthttp</td><td>Fasthttp</td><td>304378.0</td><td>+126.4%</td></tr><tr><td>v3-iouring</td><td>Iouring</td><td>508810.0</td><td>+278.5%</td></tr><tr><td>v4-observability</td><td>Observability</td><td>545253.0</td><td>+305.6%</td></tr><tr><td>v5-response-cache</td><td>Response Cache</td><td>541275.0</td><td>+302.6%</td></tr><tr><td>v6-scala-netty</td><td>Scala Netty</td><td>628956.0</td><td>+367.9%</td></tr></tbody>
+  </table>
+</div></p>
+<p>
+<div class="chart-container">
+  <h4>The Performance Journey</h4>
+  <canvas id="chart_4"></canvas>
+  <script>
+    (function() {
+      const ctx = document.getElementById('chart_4').getContext('2d');
+      new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: ["Gin Baseline","Fasthttp","Iouring","Observability","Response Cache","Scala Netty"],
+          datasets: [{
+      label: 'default',
+      data: [134432.0,304378.0,508810.0,545253.0,541275.0,628956.0],
+      borderColor: '#3498db',
+      backgroundColor: '#3498db22',
+      borderWidth: 2,
+      fill: false,
+      tension: 0.3
+    }]
+        },
+        options: {"indexAxis": "y", "plugins": {"legend": {"display": false}}}
+      });
+    })();
+  </script>
+</div></p>
+<h3><a href="#what-we-learned" id="what-we-learned" class="anchor"></a>What We Learned</h3>
+<ol>
+<li><strong>Framework choice matters</strong> — Gin→FastHTTP gave significant gains</li>
+<li><strong>io_uring is transformational</strong> — Eliminates syscall overhead</li>
+<li><strong>Platform matters</strong> — Linux outperforms macOS for I/O</li>
+<li><strong>Test real patterns</strong> — Keep-alive hides connection overhead</li>
+<li><strong>Throughput stability &gt; peak</strong> — Consistent performance matters</li>
+<li><strong>Collaborate with the OS</strong> — iptables load shedding keeps throughput stable</li>
+<li><strong>Let the system self-tune</strong> — Adaptive limits discover optimal configurations</li>
+<li><strong>Provide signals, not solutions</strong> — The server's job ends at exposing metrics</li>
+</ol>
+<hr />
+<p><em>This document was generated from hand-written narrative combined with live benchmark data.</em></p>
+<hr />
+<h2><a href="#further-reading" id="further-reading" class="anchor"></a>Further Reading</h2>
+<ul>
+<li><strong><a href="dsl-book.html">HTTP DSL Book</a></strong> — Complete guide to the type-safe routing DSL</li>
+<li><strong><a href="app-book.html">Application Book</a></strong> — Clean architecture and domain-driven design</li>
+<li><strong><a href="bookgen-book.html">BookGen</a></strong> — Living documentation generator</li>
+</ul>
+<p>
+<footer class="generated-footer">
+  <p>Generated from narrative Markdown with live benchmark data</p>
+  <p class="timestamp">Kraft Durable Workflows - Event Search API</p>
+</footer></p>
+
+  <script>
+    const STYLES = ['modern', 'editorial'];
+    function cycleStyle() {
+      const html = document.documentElement;
+      const current = html.getAttribute('data-style') || 'modern';
+      const next = STYLES[(STYLES.indexOf(current) + 1) % STYLES.length];
+      html.setAttribute('data-style', next);
+      localStorage.setItem('style', next);
+      document.querySelector('.style-label').textContent = next === 'modern' ? 'Aa' : 'Ed';
+    }
+    function toggleTheme() {
+      const html = document.documentElement;
+      const current = html.getAttribute('data-theme');
+      const next = current === 'dark' ? 'light' : 'dark';
+      html.setAttribute('data-theme', next);
+      localStorage.setItem('theme', next);
+      document.getElementById('hljs-theme-dark').disabled = (next === 'light');
+      document.getElementById('hljs-theme-light').disabled = (next !== 'light');
+    }
+    (function() {
+      const style = document.documentElement.getAttribute('data-style') || 'editorial';
+      document.querySelector('.style-label').textContent = style === 'modern' ? 'Aa' : 'Ed';
+      if (typeof hljs !== 'undefined') hljs.highlightAll();
+    })();
+  </script>
+</body>
+</html>
