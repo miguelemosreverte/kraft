@@ -546,8 +546,10 @@ object SmartFSNode:
         sys.exit(1)
 
   def runNode(port: Int, storagePath: String): Unit =
-    val nodeId = s"smart-fs-$port"
     val hostname = java.net.InetAddress.getLocalHost.getHostName
+    // Include hostname hash in nodeId to ensure uniqueness across machines
+    val hostHash = hostname.hashCode.toHexString.take(4)
+    val nodeId = s"node-$hostHash-$port"
     val wsPort = port + 10  // WebSocket on port + 10 (e.g., 7810 for HTTP, 7820 for WS)
 
     println("=" * 60)
