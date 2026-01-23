@@ -1,13 +1,22 @@
 #!/bin/bash
 #
-# Node Auto-Updater
-# Polls GitHub for new commits and automatically restarts the node when code changes
+# KRAFT Auto-Updater - Tier 1 (Rarely changes)
+# =============================================
+# Polls GitHub and manages tiered updates:
+#   - Tier 2 changes (Scala node): Full restart
+#   - Tier 3 changes (clients only): Hot reload without node restart
 #
 # Usage: ./node-autoupdate.sh [poll_interval_seconds] [node_port]
 #
 # Environment variables:
 #   KRAFT_REPO_URL - Git repository URL (default: origin)
 #   KRAFT_BRANCH   - Branch to track (default: main)
+#
+# Update Tiers:
+#   Tier 0: scripts/kraft-supervisor.sh - NEVER auto-updates
+#   Tier 1: scripts/node-autoupdate.sh  - NEVER auto-updates (this file)
+#   Tier 2: src/main/scala/**           - Requires node restart
+#   Tier 3: examples/*, clients/*       - Hot reload (no restart needed)
 #
 
 set -e
@@ -79,32 +88,73 @@ start_node() {
     return 1
 }
 
+detect_change_tier() {
+    local old_commit=$1
+    local new_commit=$2
+
+    # Get list of changed files
+    local changed_files=$(git diff --name-only "$old_commit" "$new_commit" 2>/dev/null)
+
+    # Check if Tier 1/0 changed (should NOT happen in normal operation)
+    if echo "$changed_files" | grep -qE "^scripts/(kraft-supervisor|node-autoupdate)\.sh$"; then
+        log_warn "WARNING: Updater scripts changed! Manual restart recommended."
+        return 0  # Tier 0 - don't auto-update ourselves
+    fi
+
+    # Check if Tier 2 changed (Scala node code)
+    if echo "$changed_files" | grep -qE "^src/main/scala/"; then
+        return 2  # Tier 2 - requires node restart
+    fi
+
+    # Otherwise it's Tier 3 (clients, examples, etc.)
+    return 3  # Tier 3 - hot reload only
+}
+
 update_and_restart() {
+    local old_commit=$(get_local_commit)
+
     log "Pulling latest changes..."
 
     # Stash any local changes
     git stash 2>/dev/null || true
 
     # Pull latest
-    if git pull "$REPO_URL" "$BRANCH"; then
-        log_success "Code updated successfully"
-
-        # Compile
-        log "Compiling..."
-        if sbt compile; then
-            log_success "Compilation successful"
-
-            # Restart node
-            start_node
-            return 0
-        else
-            log_error "Compilation failed!"
-            return 1
-        fi
-    else
+    if ! git pull "$REPO_URL" "$BRANCH"; then
         log_error "Git pull failed!"
         return 1
     fi
+
+    local new_commit=$(get_local_commit)
+    log_success "Code updated: ${old_commit:0:8} -> ${new_commit:0:8}"
+
+    # Detect what tier of changes occurred
+    detect_change_tier "$old_commit" "$new_commit"
+    local change_tier=$?
+
+    case $change_tier in
+        0)
+            log_warn "Tier 0/1 changes detected - manual intervention required"
+            return 0
+            ;;
+        2)
+            log "Tier 2 changes (Scala node) - full restart required"
+            # Compile
+            log "Compiling..."
+            if sbt compile; then
+                log_success "Compilation successful"
+                start_node
+                return 0
+            else
+                log_error "Compilation failed!"
+                return 1
+            fi
+            ;;
+        3)
+            log "Tier 3 changes (clients only) - no restart needed"
+            log_success "Clients will pick up changes on next request"
+            return 0
+            ;;
+    esac
 }
 
 # Main loop

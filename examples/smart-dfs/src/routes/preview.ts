@@ -70,14 +70,15 @@ export async function handlePreview(
       await dfs.discoverNodes();
     }
 
-    // Find the target node
+    // Find nodes to try - keep ALL matching nodes (may have duplicate IDs but different endpoints)
     let nodesToTry = dfs.getNodes();
-    console.log(`[Preview] Nodes to try: ${nodesToTry.map(n => n.info.nodeId).join(', ')}`);
+    console.log(`[Preview] Nodes available: ${nodesToTry.map(n => `${n.info.hostname}(${n.endpoint})`).join(', ')}`);
     if (targetNodeId) {
-      const targetNode = nodesToTry.find(n => n.info.nodeId === targetNodeId);
-      if (targetNode) {
-        nodesToTry = [targetNode];
-        console.log(`[Preview] Using specific node: ${targetNodeId}`);
+      // Filter to nodes with matching ID, but keep ALL of them (different endpoints)
+      const matchingNodes = nodesToTry.filter(n => n.info.nodeId === targetNodeId);
+      if (matchingNodes.length > 0) {
+        nodesToTry = matchingNodes;
+        console.log(`[Preview] Trying ${matchingNodes.length} node(s) with ID ${targetNodeId}`);
       }
     }
 
